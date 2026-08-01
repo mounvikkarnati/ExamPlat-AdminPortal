@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
+import logo from "../assets/logo.png";
 
 const icons = {
   grid: <path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Zm10 0h6v6h-6v-6Z" />,
@@ -41,7 +42,7 @@ export default function Navbar() {
       {open && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setOpen(false)} />}
       <aside className={`app-sidebar ${open ? "sidebar-open" : ""}`}>
         <div className="brand-lockup">
-          <div className="brand-mark">EP</div>
+          <img src={logo} alt="ExamPlat logo" className="h-9 w-9 rounded-lg object-contain" />
           <div><p>ExamPlat</p><span>CONTROL CENTER</span></div>
           <button className="icon-button sidebar-close" aria-label="Close navigation" onClick={() => setOpen(false)}><Icon name="close" className="h-5 w-5" /></button>
         </div>
