@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, Navigate } from "react-router-dom";
 import api from "../api/axios";
+import { useAuth } from "../context/AuthContext.jsx";
 import { StatusBadge } from "./Dashboard.jsx";
 
 const toTimeInput = (iso) => {
@@ -9,6 +10,8 @@ const toTimeInput = (iso) => {
 };
 
 export default function ModifyTest() {
+  const { admin, isSuperAdmin } = useAuth();
+  const currentAdminId = admin?.id || admin?._id;
   const { id } = useParams();
   const [test, setTest] = useState(null);
   const [questionCount, setQuestionCount] = useState(0);
@@ -97,6 +100,8 @@ export default function ModifyTest() {
   };
 
   if (!test) return <p className="text-sm text-slate-500">Loading…</p>;
+  const canManageCurrentTest = isSuperAdmin || (currentAdminId && test.createdBy && String(test.createdBy._id || test.createdBy.id || test.createdBy) === String(currentAdminId));
+  if (!canManageCurrentTest) return <Navigate to="/tests" replace />;
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
@@ -108,6 +113,7 @@ export default function ModifyTest() {
           <div>
             <h1 className="text-xl font-semibold text-slate-900">{test.title}</h1>
             <p className="text-sm text-slate-500">{test.testId} · {questionCount} questions · {test.candidateCount} candidates</p>
+            <p className="mt-1 text-sm text-slate-500">Created by {test.createdBy?.name || "—"}</p>
           </div>
           <div className="flex items-center gap-3"><StatusBadge status={test.status} />{test.status === "Completed" && <button onClick={publishResults} disabled={publishing} className="btn-primary text-sm">{publishing ? "Publishing…" : "Publish results"}</button>}</div>
         </div>

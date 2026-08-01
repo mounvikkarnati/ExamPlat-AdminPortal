@@ -23,7 +23,7 @@ const currentStatus = (test) => {
 const withCurrentStatus = (test) => ({ ...test.toObject(), status: currentStatus(test) });
 
 const findTestOrThrow = async (id, res) => {
-  const test = await Test.findById(id);
+  const test = await Test.findById(id).populate("createdBy", "name role");
   if (!test) {
     res.status(404);
     throw new Error("Test not found");
@@ -99,6 +99,8 @@ const createTest = asyncHandler(async (req, res) => {
     createdBy: req.admin._id,
   });
 
+  await test.populate("createdBy", "name role");
+
   await Question.insertMany(questions.map((q) => ({ ...q, testId: test._id })));
 
   await AllowedCandidate.insertMany(
@@ -127,7 +129,7 @@ const createTest = asyncHandler(async (req, res) => {
 
 // @route GET /api/tests   (Section 5.1 - Test List)
 const listTests = asyncHandler(async (req, res) => {
-  const tests = await Test.find().sort({ createdAt: -1 });
+  const tests = await Test.find().populate("createdBy", "name role").sort({ createdAt: -1 });
   res.json(tests.map(withCurrentStatus));
 });
 
