@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, Link, Navigate } from "react-router-dom";
+import { useParams, Link, Navigate, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import { useAuth } from "../context/AuthContext.jsx";
 import { StatusBadge } from "./Dashboard.jsx";
@@ -13,6 +13,7 @@ export default function ModifyTest() {
   const { admin, isSuperAdmin } = useAuth();
   const currentAdminId = admin?.id || admin?._id;
   const { id } = useParams();
+  const navigate = useNavigate();
   const [test, setTest] = useState(null);
   const [questionCount, setQuestionCount] = useState(0);
   const [startTime, setStartTime] = useState("");
@@ -23,6 +24,7 @@ export default function ModifyTest() {
   const [saveError, setSaveError] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [publishMessage, setPublishMessage] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const [candidates, setCandidates] = useState([]);
   const [total, setTotal] = useState(0);
@@ -99,6 +101,23 @@ export default function ModifyTest() {
     } finally { setPublishing(false); }
   };
 
+  const handleDeleteTest = async () => {
+    if (!window.confirm(`Delete "${test?.title}" and all related questions and candidates? This cannot be undone.`)) {
+      return;
+    }
+
+    setDeleting(true);
+    setSaveError("");
+    try {
+      await api.delete(`/tests/${id}`);
+      navigate("/tests", { replace: true });
+    } catch (err) {
+      setSaveError(err.response?.data?.message || "Could not delete exam");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (!test) return <p className="text-sm text-slate-500">Loading…</p>;
   const canManageCurrentTest = isSuperAdmin || (currentAdminId && test.createdBy && String(test.createdBy._id || test.createdBy.id || test.createdBy) === String(currentAdminId));
   if (!canManageCurrentTest) return <Navigate to="/tests" replace />;
@@ -115,7 +134,15 @@ export default function ModifyTest() {
             <p className="text-sm text-slate-500">{test.testId} · {questionCount} questions · {test.candidateCount} candidates</p>
             <p className="mt-1 text-sm text-slate-500">Created by {test.createdBy?.name || "—"}</p>
           </div>
-          <div className="flex items-center gap-3"><StatusBadge status={test.status} />{test.status === "Completed" && <button onClick={publishResults} disabled={publishing} className="btn-primary text-sm">{publishing ? "Publishing…" : "Publish results"}</button>}</div>
+          <div className="flex items-center gap-3">
+            <StatusBadge status={test.status} />
+            {test.status === "Completed" && <button onClick={publishResults} disabled={publishing} className="btn-primary text-sm">{publishing ? "Publishing…" : "Publish results"}</button>}
+            {isSuperAdmin && (
+              <button onClick={handleDeleteTest} disabled={deleting} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-60">
+                {deleting ? "Deleting…" : "Delete exam"}
+              </button>
+            )}
+          </div>
         </div>
         {test.status === "Completed" && <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50 px-4 py-3 text-sm text-violet-900"><span className="font-semibold">Result delivery.</span> Send every candidate their result and response PDF. Candidates without an attempt receive an attendance PDF instead. {publishMessage && <span className={publishMessage.includes("Could") ? "text-red-700" : "text-emerald-700"}>{publishMessage}</span>}</div>}
       </div>

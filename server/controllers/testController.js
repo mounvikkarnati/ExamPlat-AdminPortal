@@ -140,6 +140,29 @@ const getTest = asyncHandler(async (req, res) => {
   res.json({ test: withCurrentStatus(test), questionCount });
 });
 
+// @route DELETE /api/tests/:id   (Super Admin only - remove the full exam record and its related data)
+const deleteTest = asyncHandler(async (req, res) => {
+  const test = await findTestOrThrow(req.params.id, res);
+
+  await Promise.all([
+    Question.deleteMany({ testId: test._id }),
+    AllowedCandidate.deleteMany({ testId: test._id }),
+  ]);
+
+  await Test.findByIdAndDelete(test._id);
+
+  await logAction({
+    adminId: req.admin._id,
+    action: "DELETE_TEST",
+    targetCollection: "Test",
+    targetId: test._id,
+    details: { title: test.title, testId: test.testId },
+    ipAddress: req.ip,
+  });
+
+  res.json({ message: "Test deleted successfully", testId: test.testId });
+});
+
 // @route PUT /api/tests/:id   (Section 5.2 - edit start/end TIME only; date portion is fixed)
 const modifyTestDefaults = asyncHandler(async (req, res) => {
   const test = await findTestOrThrow(req.params.id, res);
@@ -351,6 +374,7 @@ module.exports = {
   createTest,
   listTests,
   getTest,
+  deleteTest,
   modifyTestDefaults,
   listCandidates,
   addCandidate,

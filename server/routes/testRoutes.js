@@ -5,6 +5,7 @@ const {
   createTest,
   listTests,
   getTest,
+  deleteTest,
   modifyTestDefaults,
   listCandidates,
   addCandidate,
@@ -12,7 +13,7 @@ const {
   getCandidateDetail,
   publishResults,
 } = require("../controllers/testController");
-const { protect, requirePasswordChange } = require("../middleware/auth");
+const { protect, requirePasswordChange, superAdminOnly } = require("../middleware/auth");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
@@ -28,6 +29,7 @@ router.post(
 );
 router.get("/", listTests);
 router.post("/:id/publish-results", publishResults);
+router.delete("/:id", superAdminOnly, deleteTest);
 router.get("/:id", getTest);
 router.put("/:id", modifyTestDefaults);
 
