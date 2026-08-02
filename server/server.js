@@ -6,6 +6,7 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const testRoutes = require("./routes/testRoutes");
+const mockTestRoutes = require("./routes/mockTestRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 
 connectDB();
@@ -40,6 +41,7 @@ app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 app.use("/api/auth", authRoutes);
 app.use("/api/admins", adminRoutes);
 app.use("/api/tests", testRoutes);
+app.use("/api/mock-tests", mockTestRoutes);
 app.use("/api/students", studentRoutes);
 
 // 404 handler

@@ -7,7 +7,7 @@ already used by the Student Portal, per `Registration_page_DB_info.docx`.
 
 ```
 server/   Express + Mongoose API  (port 5001)
-client/   React (Vite) + Tailwind SPA  (port 5173)
+client/   React (Vite) + Tailwind SPA  (port 5174)
 ```
 
 ## Backend setup
@@ -29,7 +29,7 @@ change their password on first login (`mustChangePassword` flag, NFR-A-01).
 cd client
 npm install
 cp .env.example .env       # VITE_API_URL=http://localhost:5001/api
-npm run dev                 # http://localhost:5173
+npm run dev                 # http://localhost:5174
 ```
 
 Vite is also configured to proxy `/api` to `localhost:5001` in dev, so `VITE_API_URL` can be

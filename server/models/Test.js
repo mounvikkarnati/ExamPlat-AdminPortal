@@ -23,6 +23,10 @@ const testSchema = new mongoose.Schema(
     resultsPublishedAt: { type: Date, default: null },
     resultsPublishedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", default: null },
 
+    testType: { type: String, enum: ["scheduled", "mock"], default: "scheduled" },
+    examCategory: { type: String, enum: ["JEE", "NEET"], default: null },
+    selectAllStudents: { type: Boolean, default: false },
+
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", required: true },
   },
   { timestamps: true }

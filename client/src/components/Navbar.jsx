@@ -19,13 +19,15 @@ export function Icon({ name, className = "" }) {
 }
 
 export default function Navbar() {
-  const { admin, isSuperAdmin, logout } = useAuth();
+  const { admin, isSuperAdmin, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const links = [
     ["/", "Overview", "grid"],
     ["/tests", "Examinations", "exam"],
     ["/tests/new", "Create exam", "plus"],
+    ["/mock-tests", "Mock tests", "exam"],
+    ...(isAdmin ? [["/mock-tests/new", "Create mock test", "plus"]] : []),
     ["/students", "Students", "people"],
     ...(isSuperAdmin ? [["/admins", "Team access", "people"]] : []),
   ];

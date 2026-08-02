@@ -52,4 +52,13 @@ const requirePasswordChange = (req, res, next) => {
   next();
 };
 
-module.exports = { protect, superAdminOnly, requirePasswordChange };
+// Mock tests may only be created by regular admins, not super admins.
+const adminOnly = (req, res, next) => {
+  if (req.admin && req.admin.role === "admin") {
+    return next();
+  }
+  res.status(403);
+  throw new Error("Forbidden: Admin access required");
+};
+
+module.exports = { protect, superAdminOnly, adminOnly, requirePasswordChange };

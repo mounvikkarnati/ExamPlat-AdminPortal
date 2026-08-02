@@ -2,12 +2,14 @@ const asyncHandler = require("express-async-handler");
 const Test = require("../models/Test");
 const Question = require("../models/Question");
 const AllowedCandidate = require("../models/AllowedCandidate");
-const { parseQuestionFile, parseCandidateFile } = require("../utils/parseUploads");
-const { generateTestId, logAction } = require("../utils/helpers");
+const ExamRegistration = require("../models/ExamRegistration");
 const Student = require("../models/Student");
+const { parseQuestionFile, parseCandidateFile } = require("../utils/parseUploads");
+const { generateMockTestId, logAction } = require("../utils/helpers");
 const { makeResponsePdf, sendResultEmail } = require("../utils/resultDelivery");
 
 const MAX_ATTEMPTS = 20;
+const EXAM_CATEGORIES = ["JEE", "NEET"];
 
 const isValidDate = (value) => value instanceof Date && !Number.isNaN(value.getTime());
 const validAttemptCount = (value) =>
@@ -22,27 +24,77 @@ const currentStatus = (test) => {
 
 const withCurrentStatus = (test) => ({ ...test.toObject(), status: currentStatus(test) });
 
-const findTestOrThrow = async (id, res) => {
-  const test = await Test.findById(id).populate("createdBy", "name role");
+const findMockTestOrThrow = async (id, res) => {
+  const test = await Test.findOne({ _id: id, testType: "mock" }).populate("createdBy", "name role");
   if (!test) {
     res.status(404);
-    throw new Error("Test not found");
+    throw new Error("Mock test not found");
   }
   return test;
 };
 
-// @route POST /api/tests   (Section 4 - Create Test: question upload + schedule + candidate list, all required)
-const createTest = asyncHandler(async (req, res) => {
-  const { title, subject, startAt, endAt, defaultAttempts } = req.body;
+const isMockTestCreator = (test, admin) =>
+  admin && test.createdBy && String(test.createdBy._id || test.createdBy) === String(admin._id);
+
+const assertCanManageMockTest = (test, admin, res) => {
+  if (!isMockTestCreator(test, admin)) {
+    res.status(403);
+    throw new Error("Only the admin who created this mock test can manage it");
+  }
+};
+
+const examCategoryFilter = (examCategory) => ({
+  examType: { $regex: examCategory, $options: "i" },
+  registrationNumber: { $exists: true, $ne: "" },
+});
+
+const fetchCandidatesFromExamRegistrations = async (examCategory) => {
+  const registrations = await ExamRegistration.find(examCategoryFilter(examCategory));
+  const seen = new Set();
+  const candidates = [];
+
+  for (const reg of registrations) {
+    const hallTicketNo = String(reg.registrationNumber || "").trim();
+    if (!hallTicketNo || seen.has(hallTicketNo)) continue;
+    seen.add(hallTicketNo);
+    candidates.push({ hallTicketNo, dob: null });
+  }
+
+  return candidates;
+};
+
+// @route GET /api/mock-tests/eligible-count?examCategory=JEE
+const eligibleStudentCount = asyncHandler(async (req, res) => {
+  const { examCategory } = req.query;
+  if (!EXAM_CATEGORIES.includes(examCategory)) {
+    res.status(400);
+    throw new Error("examCategory must be JEE or NEET");
+  }
+  const candidates = await fetchCandidatesFromExamRegistrations(examCategory);
+  res.json({ examCategory, count: candidates.length });
+});
+
+// @route POST /api/mock-tests
+const createMockTest = asyncHandler(async (req, res) => {
+  if (req.admin?.role !== "admin") {
+    res.status(403);
+    throw new Error("Forbidden: Admin access required");
+  }
+
+  const { title, subject, startAt, endAt, defaultAttempts, examCategory, selectAllStudents } = req.body;
   const questionFile = req.files?.questionFile?.[0];
   const candidateFile = req.files?.candidateFile?.[0];
+  const enrollAll = selectAllStudents === "true" || selectAllStudents === true;
 
-  if (!title || !startAt || !endAt || !questionFile || !candidateFile) {
+  if (!title || !startAt || !endAt || !questionFile || !EXAM_CATEGORIES.includes(examCategory)) {
     res.status(400);
-    throw new Error(
-      "Title, schedule (start/end), a question file, and a candidate allow-list file are all required"
-    );
+    throw new Error("Title, schedule, exam category (JEE or NEET), and a question file are required");
   }
+  if (!enrollAll && !candidateFile) {
+    res.status(400);
+    throw new Error("Upload a candidate file or choose Select all students");
+  }
+
   const startDate = new Date(startAt);
   const endDate = new Date(endAt);
   if (!isValidDate(startDate) || !isValidDate(endDate) || endDate <= startDate) {
@@ -54,9 +106,20 @@ const createTest = asyncHandler(async (req, res) => {
     throw new Error(`Default attempts must be a whole number from 1 to ${MAX_ATTEMPTS}`);
   }
 
-  // FR-A-04: validate question upload with row-level errors before the test is created
   const { questions, errors: questionErrors } = parseQuestionFile(questionFile);
-  const { candidates, errors: candidateErrors } = parseCandidateFile(candidateFile);
+  let candidates = [];
+  let candidateErrors = [];
+
+  if (enrollAll) {
+    candidates = await fetchCandidatesFromExamRegistrations(examCategory);
+    if (candidates.length === 0) {
+      candidateErrors = [`No registered ${examCategory} students found`];
+    }
+  } else {
+    const parsed = parseCandidateFile(candidateFile);
+    candidates = parsed.candidates;
+    candidateErrors = parsed.errors;
+  }
 
   if (questionErrors.length > 0 || questions.length === 0) {
     return res.status(422).json({
@@ -67,7 +130,7 @@ const createTest = asyncHandler(async (req, res) => {
   }
   if (candidateErrors.length > 0 || candidates.length === 0) {
     return res.status(422).json({
-      message: "Candidate upload failed validation",
+      message: enrollAll ? "No eligible students found" : "Candidate upload failed validation",
       questionErrors,
       candidateErrors,
     });
@@ -75,8 +138,7 @@ const createTest = asyncHandler(async (req, res) => {
 
   let testId;
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const candidateId = generateTestId();
-    // The human-readable ID is not the database identifier, so guard its unique index explicitly.
+    const candidateId = generateMockTestId();
     if (!(await Test.exists({ testId: candidateId }))) {
       testId = candidateId;
       break;
@@ -84,7 +146,7 @@ const createTest = asyncHandler(async (req, res) => {
   }
   if (!testId) {
     res.status(503);
-    throw new Error("Could not allocate a unique test ID. Please try again.");
+    throw new Error("Could not allocate a unique mock test ID. Please try again.");
   }
 
   const test = await Test.create({
@@ -96,6 +158,9 @@ const createTest = asyncHandler(async (req, res) => {
     defaultAttempts: Number(defaultAttempts ?? 1),
     status: "Scheduled",
     candidateCount: candidates.length,
+    testType: "mock",
+    examCategory,
+    selectAllStudents: enrollAll,
     createdBy: req.admin._id,
   });
 
@@ -108,7 +173,6 @@ const createTest = asyncHandler(async (req, res) => {
       testId: test._id,
       hallTicketNo: c.hallTicketNo,
       dob: c.dob,
-      // Section 4.3: each starts with the test's default attempt count and default schedule (i.e. no override)
       startAtOverride: null,
       endAtOverride: null,
       attemptsOverride: null,
@@ -117,34 +181,49 @@ const createTest = asyncHandler(async (req, res) => {
 
   await logAction({
     adminId: req.admin._id,
-    action: "CREATE_TEST",
+    action: "CREATE_MOCK_TEST",
     targetCollection: "Test",
     targetId: test._id,
-    details: { testId, questionCount: questions.length, candidateCount: candidates.length },
+    details: {
+      testId,
+      examCategory,
+      selectAllStudents: enrollAll,
+      questionCount: questions.length,
+      candidateCount: candidates.length,
+    },
     ipAddress: req.ip,
   });
 
-  res.status(201).json({ test: withCurrentStatus(test), questionCount: questions.length, candidateCount: candidates.length });
+  res.status(201).json({
+    test: withCurrentStatus(test),
+    questionCount: questions.length,
+    candidateCount: candidates.length,
+  });
 });
 
-// @route GET /api/tests   (Section 5.1 - Test List — scheduled exams only)
-const listTests = asyncHandler(async (req, res) => {
-  const tests = await Test.find({ testType: { $ne: "mock" } })
+// @route GET /api/mock-tests
+const listMockTests = asyncHandler(async (req, res) => {
+  const tests = await Test.find({ testType: "mock" })
     .populate("createdBy", "name role")
     .sort({ createdAt: -1 });
   res.json(tests.map(withCurrentStatus));
 });
 
-// @route GET /api/tests/:id   (Test detail page)
-const getTest = asyncHandler(async (req, res) => {
-  const test = await findTestOrThrow(req.params.id, res);
+// @route GET /api/mock-tests/:id
+const getMockTest = asyncHandler(async (req, res) => {
+  const test = await findMockTestOrThrow(req.params.id, res);
   const questionCount = await Question.countDocuments({ testId: test._id });
-  res.json({ test: withCurrentStatus(test), questionCount });
+  res.json({
+    test: withCurrentStatus(test),
+    questionCount,
+    canManage: isMockTestCreator(test, req.admin),
+  });
 });
 
-// @route DELETE /api/tests/:id   (Super Admin only - remove the full exam record and its related data)
-const deleteTest = asyncHandler(async (req, res) => {
-  const test = await findTestOrThrow(req.params.id, res);
+// @route DELETE /api/mock-tests/:id — creator admin only
+const deleteMockTest = asyncHandler(async (req, res) => {
+  const test = await findMockTestOrThrow(req.params.id, res);
+  assertCanManageMockTest(test, req.admin, res);
 
   await Promise.all([
     Question.deleteMany({ testId: test._id }),
@@ -155,28 +234,29 @@ const deleteTest = asyncHandler(async (req, res) => {
 
   await logAction({
     adminId: req.admin._id,
-    action: "DELETE_TEST",
+    action: "DELETE_MOCK_TEST",
     targetCollection: "Test",
     targetId: test._id,
     details: { title: test.title, testId: test.testId },
     ipAddress: req.ip,
   });
 
-  res.json({ message: "Test deleted successfully", testId: test.testId });
+  res.json({ message: "Mock test deleted successfully", testId: test.testId });
 });
 
-// @route PUT /api/tests/:id   (Section 5.2 - edit start/end TIME only; date portion is fixed)
-const modifyTestDefaults = asyncHandler(async (req, res) => {
-  const test = await findTestOrThrow(req.params.id, res);
+// @route PUT /api/mock-tests/:id — creator admin only
+const modifyMockTestDefaults = asyncHandler(async (req, res) => {
+  const test = await findMockTestOrThrow(req.params.id, res);
+  assertCanManageMockTest(test, req.admin, res);
 
-  const { startTime, endTime, defaultAttempts } = req.body; // "HH:mm" strings
+  const { startTime, endTime, defaultAttempts } = req.body;
 
   const applyTimeOnly = (existingDate, hhmm) => {
     if (!hhmm) return existingDate;
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(hhmm)) return null;
     const [h, m] = hhmm.split(":").map(Number);
     const d = new Date(existingDate);
-    d.setHours(h, m, 0, 0); // date portion untouched (Section 5.2)
+    d.setHours(h, m, 0, 0);
     return d;
   };
 
@@ -204,20 +284,27 @@ const modifyTestDefaults = asyncHandler(async (req, res) => {
 
   await logAction({
     adminId: req.admin._id,
-    action: "MODIFY_TEST_DEFAULTS",
+    action: "MODIFY_MOCK_TEST_DEFAULTS",
     targetCollection: "Test",
     targetId: test._id,
-    details: { before, after: { defaultStartAt: test.defaultStartAt, defaultEndAt: test.defaultEndAt, defaultAttempts: test.defaultAttempts } },
+    details: {
+      before,
+      after: {
+        defaultStartAt: test.defaultStartAt,
+        defaultEndAt: test.defaultEndAt,
+        defaultAttempts: test.defaultAttempts,
+      },
+    },
     ipAddress: req.ip,
   });
 
   res.json(withCurrentStatus(test));
 });
 
-// @route GET /api/tests/:id/candidates   (Section 5.2 - candidate list + Section 5.4 search, server-side paginated)
+// @route GET /api/mock-tests/:id/candidates
 const listCandidates = asyncHandler(async (req, res) => {
   const { search = "", page = 1, limit = 25 } = req.query;
-  await findTestOrThrow(req.params.id, res);
+  await findMockTestOrThrow(req.params.id, res);
   const safePage = Math.max(1, Number.parseInt(page, 10) || 1);
   const safeLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
   const filter = { testId: req.params.id };
@@ -234,7 +321,7 @@ const listCandidates = asyncHandler(async (req, res) => {
   res.json({ candidates, total, page: safePage, limit: safeLimit });
 });
 
-// @route POST /api/tests/:id/candidates   (Section 5.2 - add a new Hall Ticket Number)
+// @route POST /api/mock-tests/:id/candidates — creator admin only
 const addCandidate = asyncHandler(async (req, res) => {
   const { hallTicketNo, dob } = req.body;
   if (!hallTicketNo) {
@@ -242,15 +329,16 @@ const addCandidate = asyncHandler(async (req, res) => {
     throw new Error("Hall Ticket No. is required");
   }
 
-  await findTestOrThrow(req.params.id, res);
+  const test = await findMockTestOrThrow(req.params.id, res);
+  assertCanManageMockTest(test, req.admin, res);
+
   const normalizedTicket = hallTicketNo.trim();
   const exists = await AllowedCandidate.findOne({ testId: req.params.id, hallTicketNo: normalizedTicket });
   if (exists) {
     res.status(409);
-    throw new Error("This Hall Ticket No. is already on the allow-list for this test");
+    throw new Error("This Hall Ticket No. is already on the allow-list for this mock test");
   }
 
-  // Inherits the test's current default schedule/attempts (Section 5.2) - no overrides set
   const candidate = await AllowedCandidate.create({
     testId: req.params.id,
     hallTicketNo: normalizedTicket,
@@ -261,7 +349,7 @@ const addCandidate = asyncHandler(async (req, res) => {
 
   await logAction({
     adminId: req.admin._id,
-    action: "ADD_CANDIDATE",
+    action: "ADD_MOCK_TEST_CANDIDATE",
     targetCollection: "AllowedCandidate",
     targetId: candidate._id,
     details: { hallTicketNo: normalizedTicket },
@@ -271,16 +359,18 @@ const addCandidate = asyncHandler(async (req, res) => {
   res.status(201).json(candidate);
 });
 
-// @route PUT /api/tests/:testId/candidates/:candidateId
-// Section 5.2/5.3 - per-candidate override of time/attempts; does not touch the test-wide default (FR-A-07)
+// @route PUT /api/mock-tests/:testId/candidates/:candidateId — creator admin only
 const updateCandidate = asyncHandler(async (req, res) => {
+  const test = await findMockTestOrThrow(req.params.testId, res);
+  assertCanManageMockTest(test, req.admin, res);
+
   const candidate = await AllowedCandidate.findOne({
     _id: req.params.candidateId,
     testId: req.params.testId,
   });
   if (!candidate) {
     res.status(404);
-    throw new Error("Candidate not found on this test");
+    throw new Error("Candidate not found on this mock test");
   }
 
   const { startAtOverride, endAtOverride, attemptsOverride } = req.body;
@@ -290,8 +380,6 @@ const updateCandidate = asyncHandler(async (req, res) => {
     attemptsOverride: candidate.attemptsOverride,
   };
 
-  // FR-A-08: raising attempts after exhaustion resumes the existing attempt rather than resetting it -
-  // this is enforced jointly with the Student Portal; here we simply persist the new limit.
   const parsedStart = startAtOverride ? new Date(startAtOverride) : null;
   const parsedEnd = endAtOverride ? new Date(endAtOverride) : null;
   if ((startAtOverride && !isValidDate(parsedStart)) || (endAtOverride && !isValidDate(parsedEnd))) {
@@ -308,33 +396,42 @@ const updateCandidate = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error("Candidate end override must be after the start override");
   }
-  if (attemptsOverride !== undefined) candidate.attemptsOverride = attemptsOverride === "" ? null : Number(attemptsOverride);
+  if (attemptsOverride !== undefined) {
+    candidate.attemptsOverride = attemptsOverride === "" ? null : Number(attemptsOverride);
+  }
 
   await candidate.save();
 
   await logAction({
     adminId: req.admin._id,
-    action: "MODIFY_CANDIDATE_OVERRIDE",
+    action: "MODIFY_MOCK_TEST_CANDIDATE_OVERRIDE",
     targetCollection: "AllowedCandidate",
     targetId: candidate._id,
-    details: { before, after: { startAtOverride: candidate.startAtOverride, endAtOverride: candidate.endAtOverride, attemptsOverride: candidate.attemptsOverride } },
+    details: {
+      before,
+      after: {
+        startAtOverride: candidate.startAtOverride,
+        endAtOverride: candidate.endAtOverride,
+        attemptsOverride: candidate.attemptsOverride,
+      },
+    },
     ipAddress: req.ip,
   });
 
   res.json(candidate);
 });
 
-// @route GET /api/tests/:testId/candidates/:candidateId   (Section 6 - Candidate Detail and Result Oversight)
+// @route GET /api/mock-tests/:testId/candidates/:candidateId
 const getCandidateDetail = asyncHandler(async (req, res) => {
+  const test = await findMockTestOrThrow(req.params.testId, res);
   const candidate = await AllowedCandidate.findOne({
     _id: req.params.candidateId,
     testId: req.params.testId,
   });
   if (!candidate) {
     res.status(404);
-    throw new Error("Candidate not found on this test");
+    throw new Error("Candidate not found on this mock test");
   }
-  const test = await findTestOrThrow(req.params.testId, res);
 
   res.json({
     candidate,
@@ -343,41 +440,87 @@ const getCandidateDetail = asyncHandler(async (req, res) => {
       endAt: candidate.endAtOverride || test.defaultEndAt,
       attempts: candidate.attemptsOverride ?? test.defaultAttempts,
     },
+    canManage: isMockTestCreator(test, req.admin),
   });
 });
 
-// @route POST /api/tests/:id/publish-results - emails each candidate once the assessment is complete.
+// @route POST /api/mock-tests/:id/publish-results — creator admin only
 const publishResults = asyncHandler(async (req, res) => {
-  const test = await findTestOrThrow(req.params.id, res);
+  const test = await findMockTestOrThrow(req.params.id, res);
+  assertCanManageMockTest(test, req.admin, res);
+
   if (currentStatus(test) !== "Completed") {
     res.status(400);
-    throw new Error("Results can only be published after the examination is completed");
+    throw new Error("Results can only be published after the mock test is completed");
   }
-  const [candidates, questions] = await Promise.all([AllowedCandidate.find({ testId: test._id }), Question.find({ testId: test._id })]);
-  const students = await Student.find({ $or: [{ hallTicketNo: { $in: candidates.map((candidate) => candidate.hallTicketNo) } }, { hallTicket: { $in: candidates.map((candidate) => candidate.hallTicketNo) } }] });
-  const emailsByHallTicket = new Map(students.map((student) => [student.hallTicketNo || student.hallTicket, student.email || student.emailId]));
+
+  const [candidates, questions] = await Promise.all([
+    AllowedCandidate.find({ testId: test._id }),
+    Question.find({ testId: test._id }),
+  ]);
+  const students = await Student.find({
+    $or: [
+      { hallTicketNo: { $in: candidates.map((c) => c.hallTicketNo) } },
+      { hallTicket: { $in: candidates.map((c) => c.hallTicketNo) } },
+    ],
+  });
+  const emailsByHallTicket = new Map(
+    students.map((s) => [s.hallTicketNo || s.hallTicket, s.email || s.emailId])
+  );
   const summary = { delivered: 0, skipped: 0, failed: 0, missingEmail: 0 };
+
   for (const candidate of candidates) {
-    if (candidate.resultPublishedAt) { summary.skipped += 1; continue; }
+    if (candidate.resultPublishedAt) {
+      summary.skipped += 1;
+      continue;
+    }
     const recipient = candidate.resultEmail || emailsByHallTicket.get(candidate.hallTicketNo);
-    if (!recipient) { candidate.resultDeliveryError = "No registered email address found"; await candidate.save(); summary.missingEmail += 1; continue; }
+    if (!recipient) {
+      candidate.resultDeliveryError = "No registered email address found";
+      await candidate.save();
+      summary.missingEmail += 1;
+      continue;
+    }
     try {
       const pdf = await makeResponsePdf({ test, candidate, questions });
       await sendResultEmail({ recipient, test, candidate, pdf });
-      candidate.resultPublishedAt = new Date(); candidate.resultEmail = recipient; candidate.resultDeliveryError = ""; await candidate.save(); summary.delivered += 1;
-    } catch (error) { candidate.resultDeliveryError = error.message; await candidate.save(); summary.failed += 1; }
+      candidate.resultPublishedAt = new Date();
+      candidate.resultEmail = recipient;
+      candidate.resultDeliveryError = "";
+      await candidate.save();
+      summary.delivered += 1;
+    } catch (error) {
+      candidate.resultDeliveryError = error.message;
+      await candidate.save();
+      summary.failed += 1;
+    }
   }
-  if (summary.delivered > 0) { test.resultsPublishedAt = new Date(); test.resultsPublishedBy = req.admin._id; await test.save(); }
-  await logAction({ adminId: req.admin._id, action: "PUBLISH_RESULTS", targetCollection: "Test", targetId: test._id, details: summary, ipAddress: req.ip });
+
+  if (summary.delivered > 0) {
+    test.resultsPublishedAt = new Date();
+    test.resultsPublishedBy = req.admin._id;
+    await test.save();
+  }
+
+  await logAction({
+    adminId: req.admin._id,
+    action: "PUBLISH_MOCK_TEST_RESULTS",
+    targetCollection: "Test",
+    targetId: test._id,
+    details: summary,
+    ipAddress: req.ip,
+  });
+
   res.json({ message: "Result publication finished", summary });
 });
 
 module.exports = {
-  createTest,
-  listTests,
-  getTest,
-  deleteTest,
-  modifyTestDefaults,
+  eligibleStudentCount,
+  createMockTest,
+  listMockTests,
+  getMockTest,
+  deleteMockTest,
+  modifyMockTestDefaults,
   listCandidates,
   addCandidate,
   updateCandidate,

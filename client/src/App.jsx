@@ -6,6 +6,10 @@ import Dashboard from "./pages/Dashboard.jsx";
 import CreateTest from "./pages/CreateTest.jsx";
 import TestList from "./pages/TestList.jsx";
 import ModifyTest from "./pages/ModifyTest.jsx";
+import MockTestList from "./pages/MockTestList.jsx";
+import CreateMockTest from "./pages/CreateMockTest.jsx";
+import ModifyMockTest from "./pages/ModifyMockTest.jsx";
+import MockCandidateDetail from "./pages/MockCandidateDetail.jsx";
 import CandidateDetail from "./pages/CandidateDetail.jsx";
 import ManageAdmins from "./pages/ManageAdmins.jsx";
 import ChangePassword from "./pages/ChangePassword.jsx";
@@ -61,6 +65,46 @@ export default function App() {
           <ProtectedRoute>
             <Layout>
               <ModifyTest />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/mock-tests"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <MockTestList />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/mock-tests/new"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <CreateMockTest />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/mock-tests/:id"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <ModifyMockTest />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/mock-tests/:testId/candidates/:candidateId"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <MockCandidateDetail />
             </Layout>
           </ProtectedRoute>
         }
