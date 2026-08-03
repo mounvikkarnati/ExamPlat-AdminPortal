@@ -165,20 +165,11 @@ const deleteTest = asyncHandler(async (req, res) => {
   res.json({ message: "Test deleted successfully", testId: test.testId });
 });
 
-// @route PUT /api/tests/:id   (Section 5.2 - edit start/end TIME only; date portion is fixed)
+// @route PUT /api/tests/:id   (Section 5.2 - edit start/end date AND time)
 const modifyTestDefaults = asyncHandler(async (req, res) => {
   const test = await findTestOrThrow(req.params.id, res);
 
-  const { startTime, endTime, defaultAttempts } = req.body; // "HH:mm" strings
-
-  const applyTimeOnly = (existingDate, hhmm) => {
-    if (!hhmm) return existingDate;
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(hhmm)) return null;
-    const [h, m] = hhmm.split(":").map(Number);
-    const d = new Date(existingDate);
-    d.setHours(h, m, 0, 0); // date portion untouched (Section 5.2)
-    return d;
-  };
+  const { startAt, endAt, startTime, endTime, defaultAttempts } = req.body;
 
   const before = {
     defaultStartAt: test.defaultStartAt,
@@ -186,11 +177,46 @@ const modifyTestDefaults = asyncHandler(async (req, res) => {
     defaultAttempts: test.defaultAttempts,
   };
 
-  if (startTime) test.defaultStartAt = applyTimeOnly(test.defaultStartAt, startTime);
-  if (endTime) test.defaultEndAt = applyTimeOnly(test.defaultEndAt, endTime);
+  // Support both full datetime (startAt/endAt) and time-only (startTime/endTime) formats
+  if (startAt) {
+    const parsed = new Date(startAt);
+    if (!isValidDate(parsed)) {
+      res.status(400);
+      throw new Error("Start date and time must be valid");
+    }
+    test.defaultStartAt = parsed;
+  } else if (startTime) {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) {
+      res.status(400);
+      throw new Error("Start time must be in HH:mm format");
+    }
+    const [h, m] = startTime.split(":").map(Number);
+    const d = new Date(test.defaultStartAt);
+    d.setHours(h, m, 0, 0);
+    test.defaultStartAt = d;
+  }
+
+  if (endAt) {
+    const parsed = new Date(endAt);
+    if (!isValidDate(parsed)) {
+      res.status(400);
+      throw new Error("End date and time must be valid");
+    }
+    test.defaultEndAt = parsed;
+  } else if (endTime) {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime)) {
+      res.status(400);
+      throw new Error("End time must be in HH:mm format");
+    }
+    const [h, m] = endTime.split(":").map(Number);
+    const d = new Date(test.defaultEndAt);
+    d.setHours(h, m, 0, 0);
+    test.defaultEndAt = d;
+  }
+
   if (!test.defaultStartAt || !test.defaultEndAt || test.defaultEndAt <= test.defaultStartAt) {
     res.status(400);
-    throw new Error("Provide valid times with an end time after the start time");
+    throw new Error("Provide valid dates/times with an end after the start");
   }
   if (defaultAttempts !== undefined && defaultAttempts !== "") {
     if (!validAttemptCount(defaultAttempts)) {
@@ -356,14 +382,16 @@ const publishResults = asyncHandler(async (req, res) => {
   const [candidates, questions] = await Promise.all([AllowedCandidate.find({ testId: test._id }), Question.find({ testId: test._id })]);
   const students = await Student.find({ $or: [{ hallTicketNo: { $in: candidates.map((candidate) => candidate.hallTicketNo) } }, { hallTicket: { $in: candidates.map((candidate) => candidate.hallTicketNo) } }] });
   const emailsByHallTicket = new Map(students.map((student) => [student.hallTicketNo || student.hallTicket, student.email || student.emailId]));
+  const namesByHallTicket = new Map(students.map((student) => [student.hallTicketNo || student.hallTicket, student.name || student.fullName || student.hallTicketNo || student.hallTicket]));
   const summary = { delivered: 0, skipped: 0, failed: 0, missingEmail: 0 };
   for (const candidate of candidates) {
     if (candidate.resultPublishedAt) { summary.skipped += 1; continue; }
     const recipient = candidate.resultEmail || emailsByHallTicket.get(candidate.hallTicketNo);
     if (!recipient) { candidate.resultDeliveryError = "No registered email address found"; await candidate.save(); summary.missingEmail += 1; continue; }
+    const studentName = namesByHallTicket.get(candidate.hallTicketNo) || candidate.hallTicketNo;
     try {
-      const pdf = await makeResponsePdf({ test, candidate, questions });
-      await sendResultEmail({ recipient, test, candidate, pdf });
+      const pdf = await makeResponsePdf({ test, candidate, questions, attempt: null });
+      await sendResultEmail({ recipient, test, candidate, pdf, attempt: null, studentName });
       candidate.resultPublishedAt = new Date(); candidate.resultEmail = recipient; candidate.resultDeliveryError = ""; await candidate.save(); summary.delivered += 1;
     } catch (error) { candidate.resultDeliveryError = error.message; await candidate.save(); summary.failed += 1; }
   }

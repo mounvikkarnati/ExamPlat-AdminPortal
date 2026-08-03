@@ -3,9 +3,11 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import api from "../api/axios";
 import { StatusBadge } from "./Dashboard.jsx";
 
-const toTimeInput = (iso) => {
+const toLocalInput = (iso) => {
+  if (!iso) return "";
   const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
 export default function ModifyMockTest() {
@@ -14,8 +16,8 @@ export default function ModifyMockTest() {
   const [test, setTest] = useState(null);
   const [canManage, setCanManage] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const [startAt, setStartAt] = useState("");
+  const [endAt, setEndAt] = useState("");
   const [defaultAttempts, setDefaultAttempts] = useState(1);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -38,8 +40,8 @@ export default function ModifyMockTest() {
       setTest(data.test);
       setCanManage(data.canManage);
       setQuestionCount(data.questionCount);
-      setStartTime(toTimeInput(data.test.defaultStartAt));
-      setEndTime(toTimeInput(data.test.defaultEndAt));
+      setStartAt(toLocalInput(data.test.defaultStartAt));
+      setEndAt(toLocalInput(data.test.defaultEndAt));
       setDefaultAttempts(data.test.defaultAttempts);
     });
   }, [id]);
@@ -64,7 +66,7 @@ export default function ModifyMockTest() {
     setSaved(false);
     setSaveError("");
     try {
-      const { data } = await api.put(`/mock-tests/${id}`, { startTime, endTime, defaultAttempts });
+      const { data } = await api.put(`/mock-tests/${id}`, { startAt, endAt, defaultAttempts });
       setTest(data);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -185,28 +187,27 @@ export default function ModifyMockTest() {
       <div className="card p-6">
         <h2 className="mb-1 font-medium text-slate-800">Mock test defaults</h2>
         <p className="mb-4 text-xs text-slate-500">
-          The date portion is fixed at creation — only start/end time-of-day and attempts can be changed here.
+          Edit the start/end date and time, and the default attempt count.
         </p>
         {canManage ? (
           <form onSubmit={handleSaveDefaults} className="flex flex-wrap items-end gap-4">
             <div>
-              <label className="label">Start Time</label>
+              <label className="label">Start Date & Time</label>
               <input
-                type="time"
+                type="datetime-local"
                 className="input"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
+                value={startAt}
+                onChange={(e) => setStartAt(e.target.value)}
               />
-              <p className="mt-1 text-xs text-slate-400">
-                Date: {new Date(test.defaultStartAt).toLocaleDateString()}
-              </p>
             </div>
             <div>
-              <label className="label">End Time</label>
-              <input type="time" className="input" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
-              <p className="mt-1 text-xs text-slate-400">
-                Date: {new Date(test.defaultEndAt).toLocaleDateString()}
-              </p>
+              <label className="label">End Date & Time</label>
+              <input
+                type="datetime-local"
+                className="input"
+                value={endAt}
+                onChange={(e) => setEndAt(e.target.value)}
+              />
             </div>
             <div>
               <label className="label">Default Attempts</label>
@@ -281,13 +282,14 @@ export default function ModifyMockTest() {
               <th className="px-3 py-2 text-left">Hall Ticket No.</th>
               <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-left">Score</th>
+              <th className="px-3 py-2 text-left">Attempt</th>
               <th className="px-3 py-2 text-left" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {candidates.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
                   No students found.
                 </td>
               </tr>
@@ -296,7 +298,14 @@ export default function ModifyMockTest() {
                 <tr key={c._id} className="hover:bg-slate-50">
                   <td className="px-3 py-2 font-medium text-slate-800">{c.hallTicketNo}</td>
                   <td className="px-3 py-2 capitalize text-slate-600">{c.status}</td>
-                  <td className="px-3 py-2 text-slate-600">{c.score ?? "—"}</td>
+                  <td className="px-3 py-2 text-slate-600">
+                    {c.score !== null && c.score !== undefined
+                      ? `${c.score}${c.totalMarks ? ` / ${c.totalMarks}` : ""}`
+                      : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">
+                    {c.attemptNumber ? `#${c.attemptNumber}` : "—"}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <Link
                       to={`/mock-tests/${id}/candidates/${c._id}`}

@@ -54,7 +54,7 @@ export default function MockCandidateDetail() {
   };
 
   if (!data) return <p className="text-sm text-slate-500">Loading…</p>;
-  const { candidate, effective, canManage } = data;
+  const { candidate, effective, canManage, attempt } = data;
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -153,9 +153,52 @@ export default function MockCandidateDetail() {
 
       <div className="card p-6">
         <h2 className="mb-2 font-medium text-slate-800">Result</h2>
-        <p className="text-sm text-slate-600">
-          Score: <span className="font-medium">{candidate.score ?? "Not yet available"}</span>
-        </p>
+        {attempt ? (
+          <div className="space-y-2 text-sm">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-slate-500">Score</p>
+                <p className="font-medium text-slate-800">
+                  {attempt.score ?? "—"} {attempt.totalMarks ? `/ ${attempt.totalMarks}` : ""}
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-500">Percentage</p>
+                <p className="font-medium text-slate-800">{attempt.percentage ?? 0}%</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Attempt</p>
+                <p className="font-medium text-slate-800">#{attempt.attemptNumber ?? 1}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Time taken</p>
+                <p className="font-medium text-slate-800">{attempt.timeTaken ?? 0} min</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Correct</p>
+                <p className="font-medium text-green-600">{attempt.correctAnswers ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Wrong</p>
+                <p className="font-medium text-red-600">{attempt.wrongAnswers ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Unanswered</p>
+                <p className="font-medium text-slate-600">{attempt.unanswered ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Submitted</p>
+                <p className="font-medium text-slate-600">
+                  {attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : "—"}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600">
+            Score: <span className="font-medium">{candidate.score ?? "Not yet available"}</span>
+          </p>
+        )}
         {candidate.submissionReason && (
           <p className="mt-1 text-sm text-slate-500">Submission reason: {candidate.submissionReason}</p>
         )}

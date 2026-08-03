@@ -4,9 +4,11 @@ import api from "../api/axios";
 import { useAuth } from "../context/AuthContext.jsx";
 import { StatusBadge } from "./Dashboard.jsx";
 
-const toTimeInput = (iso) => {
+const toLocalInput = (iso) => {
+  if (!iso) return "";
   const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
 export default function ModifyTest() {
@@ -16,8 +18,8 @@ export default function ModifyTest() {
   const navigate = useNavigate();
   const [test, setTest] = useState(null);
   const [questionCount, setQuestionCount] = useState(0);
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const [startAt, setStartAt] = useState("");
+  const [endAt, setEndAt] = useState("");
   const [defaultAttempts, setDefaultAttempts] = useState(1);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -39,8 +41,8 @@ export default function ModifyTest() {
     api.get(`/tests/${id}`).then(({ data }) => {
       setTest(data.test);
       setQuestionCount(data.questionCount);
-      setStartTime(toTimeInput(data.test.defaultStartAt));
-      setEndTime(toTimeInput(data.test.defaultEndAt));
+      setStartAt(toLocalInput(data.test.defaultStartAt));
+      setEndAt(toLocalInput(data.test.defaultEndAt));
       setDefaultAttempts(data.test.defaultAttempts);
     });
   }, [id]);
@@ -63,7 +65,7 @@ export default function ModifyTest() {
     setSaved(false);
     setSaveError("");
     try {
-      const { data } = await api.put(`/tests/${id}`, { startTime, endTime, defaultAttempts });
+      const { data } = await api.put(`/tests/${id}`, { startAt, endAt, defaultAttempts });
       setTest(data);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -150,18 +152,16 @@ export default function ModifyTest() {
       <div className="card p-6">
         <h2 className="font-medium text-slate-800 mb-1">Modify Test Defaults</h2>
         <p className="text-xs text-slate-500 mb-4">
-          The date portion is fixed at creation — only start/end time-of-day and attempts can be changed here (Section 5.2).
+          Edit the start/end date and time, and the default attempt count.
         </p>
         <form onSubmit={handleSaveDefaults} className="flex flex-wrap items-end gap-4">
           <div>
-            <label className="label">Start Time</label>
-            <input type="time" className="input" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
-            <p className="text-xs text-slate-400 mt-1">Date: {new Date(test.defaultStartAt).toLocaleDateString()}</p>
+            <label className="label">Start Date & Time</label>
+            <input type="datetime-local" className="input" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
           </div>
           <div>
-            <label className="label">End Time</label>
-            <input type="time" className="input" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
-            <p className="text-xs text-slate-400 mt-1">Date: {new Date(test.defaultEndAt).toLocaleDateString()}</p>
+            <label className="label">End Date & Time</label>
+            <input type="datetime-local" className="input" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
           </div>
           <div>
             <label className="label">Default Attempts</label>

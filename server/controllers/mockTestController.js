@@ -4,6 +4,7 @@ const Question = require("../models/Question");
 const AllowedCandidate = require("../models/AllowedCandidate");
 const ExamRegistration = require("../models/ExamRegistration");
 const Student = require("../models/Student");
+const MockAttempt = require("../models/MockAttempt");
 const { parseQuestionFile, parseCandidateFile } = require("../utils/parseUploads");
 const { generateMockTestId, logAction } = require("../utils/helpers");
 const { makeResponsePdf, sendResultEmail } = require("../utils/resultDelivery");
@@ -245,20 +246,12 @@ const deleteMockTest = asyncHandler(async (req, res) => {
 });
 
 // @route PUT /api/mock-tests/:id — creator admin only
+// Now accepts full datetime-local values (startAt/endAt) so the admin can edit the date as well.
 const modifyMockTestDefaults = asyncHandler(async (req, res) => {
   const test = await findMockTestOrThrow(req.params.id, res);
   assertCanManageMockTest(test, req.admin, res);
 
-  const { startTime, endTime, defaultAttempts } = req.body;
-
-  const applyTimeOnly = (existingDate, hhmm) => {
-    if (!hhmm) return existingDate;
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(hhmm)) return null;
-    const [h, m] = hhmm.split(":").map(Number);
-    const d = new Date(existingDate);
-    d.setHours(h, m, 0, 0);
-    return d;
-  };
+  const { startAt, endAt, startTime, endTime, defaultAttempts } = req.body;
 
   const before = {
     defaultStartAt: test.defaultStartAt,
@@ -266,11 +259,46 @@ const modifyMockTestDefaults = asyncHandler(async (req, res) => {
     defaultAttempts: test.defaultAttempts,
   };
 
-  if (startTime) test.defaultStartAt = applyTimeOnly(test.defaultStartAt, startTime);
-  if (endTime) test.defaultEndAt = applyTimeOnly(test.defaultEndAt, endTime);
+  // Support both full datetime (startAt/endAt) and time-only (startTime/endTime) formats
+  if (startAt) {
+    const parsed = new Date(startAt);
+    if (!isValidDate(parsed)) {
+      res.status(400);
+      throw new Error("Start date and time must be valid");
+    }
+    test.defaultStartAt = parsed;
+  } else if (startTime) {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) {
+      res.status(400);
+      throw new Error("Start time must be in HH:mm format");
+    }
+    const [h, m] = startTime.split(":").map(Number);
+    const d = new Date(test.defaultStartAt);
+    d.setHours(h, m, 0, 0);
+    test.defaultStartAt = d;
+  }
+
+  if (endAt) {
+    const parsed = new Date(endAt);
+    if (!isValidDate(parsed)) {
+      res.status(400);
+      throw new Error("End date and time must be valid");
+    }
+    test.defaultEndAt = parsed;
+  } else if (endTime) {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime)) {
+      res.status(400);
+      throw new Error("End time must be in HH:mm format");
+    }
+    const [h, m] = endTime.split(":").map(Number);
+    const d = new Date(test.defaultEndAt);
+    d.setHours(h, m, 0, 0);
+    test.defaultEndAt = d;
+  }
+
   if (!test.defaultStartAt || !test.defaultEndAt || test.defaultEndAt <= test.defaultStartAt) {
     res.status(400);
-    throw new Error("Provide valid times with an end time after the start time");
+    throw new Error("Provide valid dates/times with an end after the start");
   }
   if (defaultAttempts !== undefined && defaultAttempts !== "") {
     if (!validAttemptCount(defaultAttempts)) {
@@ -302,9 +330,10 @@ const modifyMockTestDefaults = asyncHandler(async (req, res) => {
 });
 
 // @route GET /api/mock-tests/:id/candidates
+// Now fetches scores from the mockattempts collection and joins them by hall ticket.
 const listCandidates = asyncHandler(async (req, res) => {
   const { search = "", page = 1, limit = 25 } = req.query;
-  await findMockTestOrThrow(req.params.id, res);
+  const test = await findMockTestOrThrow(req.params.id, res);
   const safePage = Math.max(1, Number.parseInt(page, 10) || 1);
   const safeLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
   const filter = { testId: req.params.id };
@@ -318,7 +347,35 @@ const listCandidates = asyncHandler(async (req, res) => {
     AllowedCandidate.countDocuments(filter),
   ]);
 
-  res.json({ candidates, total, page: safePage, limit: safeLimit });
+  // Fetch scores from mockattempts for this test
+  // NOTE: testMongoId is stored as a STRING in the mockattempts collection
+  const attempts = await MockAttempt.find({ testMongoId: String(test._id) });
+  const scoreByHallTicket = new Map();
+  for (const a of attempts) {
+    // Find the registration to map studentId -> hallTicketNo
+    const reg = await ExamRegistration.findById(a.registrationId);
+    if (reg && reg.registrationNumber) {
+      const hallTicket = String(reg.registrationNumber).trim();
+      if (!scoreByHallTicket.has(hallTicket) || (a.attemptNumber || 1) > (scoreByHallTicket.get(hallTicket)?.attemptNumber || 0)) {
+        scoreByHallTicket.set(hallTicket, a);
+      }
+    }
+  }
+
+  const enriched = candidates.map((c) => {
+    const obj = c.toObject();
+    const attempt = scoreByHallTicket.get(c.hallTicketNo);
+    if (attempt) {
+      obj.score = attempt.score;
+      obj.totalMarks = attempt.totalMarks;
+      obj.attemptNumber = attempt.attemptNumber;
+      obj.percentage = attempt.percentage;
+      obj.attemptStatus = attempt.status;
+    }
+    return obj;
+  });
+
+  res.json({ candidates: enriched, total, page: safePage, limit: safeLimit });
 });
 
 // @route POST /api/mock-tests/:id/candidates — creator admin only
@@ -433,8 +490,18 @@ const getCandidateDetail = asyncHandler(async (req, res) => {
     throw new Error("Candidate not found on this mock test");
   }
 
+  // Fetch the latest attempt for this candidate
+  const reg = await ExamRegistration.findOne({ registrationNumber: candidate.hallTicketNo });
+  let attempt = null;
+  if (reg) {
+    // NOTE: testMongoId is stored as a STRING in the mockattempts collection
+    attempt = await MockAttempt.findOne({ studentId: reg.studentId, testMongoId: String(test._id) })
+      .sort({ attemptNumber: -1 });
+  }
+
   res.json({
     candidate,
+    attempt,
     effective: {
       startAt: candidate.startAtOverride || test.defaultStartAt,
       endAt: candidate.endAtOverride || test.defaultEndAt,
@@ -458,15 +525,31 @@ const publishResults = asyncHandler(async (req, res) => {
     AllowedCandidate.find({ testId: test._id }),
     Question.find({ testId: test._id }),
   ]);
-  const students = await Student.find({
-    $or: [
-      { hallTicketNo: { $in: candidates.map((c) => c.hallTicketNo) } },
-      { hallTicket: { $in: candidates.map((c) => c.hallTicketNo) } },
-    ],
-  });
-  const emailsByHallTicket = new Map(
-    students.map((s) => [s.hallTicketNo || s.hallTicket, s.email || s.emailId])
-  );
+
+  // Fetch all attempts for this test
+  // NOTE: testMongoId is stored as a STRING in the mockattempts collection
+  const attempts = await MockAttempt.find({ testMongoId: String(test._id) });
+
+  // Build a map of hallTicketNo -> latest attempt
+  const attemptByHallTicket = new Map();
+  for (const a of attempts) {
+    const reg = await ExamRegistration.findById(a.registrationId);
+    if (reg && reg.registrationNumber) {
+      const hallTicket = String(reg.registrationNumber).trim();
+      const existing = attemptByHallTicket.get(hallTicket);
+      if (!existing || (a.attemptNumber || 1) > (existing.attemptNumber || 0)) {
+        attemptByHallTicket.set(hallTicket, a);
+      }
+    }
+  }
+
+  // Fetch student info for names and emails
+  const regs = await ExamRegistration.find({ registrationNumber: { $in: candidates.map((c) => c.hallTicketNo) } });
+  const studentIds = regs.map((r) => r.studentId).filter(Boolean);
+  const students = await Student.find({ _id: { $in: studentIds } });
+  const studentById = new Map(students.map((s) => [String(s._id), s]));
+  const regByHallTicket = new Map(regs.map((r) => [String(r.registrationNumber).trim(), r]));
+
   const summary = { delivered: 0, skipped: 0, failed: 0, missingEmail: 0 };
 
   for (const candidate of candidates) {
@@ -474,16 +557,23 @@ const publishResults = asyncHandler(async (req, res) => {
       summary.skipped += 1;
       continue;
     }
-    const recipient = candidate.resultEmail || emailsByHallTicket.get(candidate.hallTicketNo);
+
+    const reg = regByHallTicket.get(candidate.hallTicketNo);
+    const student = reg ? studentById.get(String(reg.studentId)) : null;
+    const recipient = candidate.resultEmail || student?.email || student?.emailId;
     if (!recipient) {
       candidate.resultDeliveryError = "No registered email address found";
       await candidate.save();
       summary.missingEmail += 1;
       continue;
     }
+
+    const attempt = attemptByHallTicket.get(candidate.hallTicketNo) || null;
+    const studentName = student?.name || student?.fullName || candidate.hallTicketNo;
+
     try {
-      const pdf = await makeResponsePdf({ test, candidate, questions });
-      await sendResultEmail({ recipient, test, candidate, pdf });
+      const pdf = await makeResponsePdf({ test, candidate, questions, attempt });
+      await sendResultEmail({ recipient, test, candidate, pdf, attempt, studentName });
       candidate.resultPublishedAt = new Date();
       candidate.resultEmail = recipient;
       candidate.resultDeliveryError = "";
