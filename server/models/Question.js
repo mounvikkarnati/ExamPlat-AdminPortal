@@ -18,7 +18,15 @@ const questionSchema = new mongoose.Schema(
     subject: { type: String, trim: true, default: "" },
     topic: { type: String, trim: true, default: "" },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    // CRITICAL: The student portal shares this same MongoDB database and its
+    // Question model defines a stale unique index { testId: 1, questionId: 1 }.
+    // autoIndex: false prevents Mongoose from syncing/creating indexes on this
+    // collection when the admin server starts, so the stale index from the
+    // student portal is never re-created by this app.
+    autoIndex: false,
+  }
 );
 
 module.exports = mongoose.model("Question", questionSchema);

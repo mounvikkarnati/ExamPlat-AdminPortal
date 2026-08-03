@@ -1,4 +1,5 @@
 const asyncHandler = require("express-async-handler");
+const mongoose = require("mongoose");
 const Test = require("../models/Test");
 const Question = require("../models/Question");
 const AllowedCandidate = require("../models/AllowedCandidate");
@@ -8,6 +9,24 @@ const Student = require("../models/Student");
 const { makeResponsePdf, sendResultEmail } = require("../utils/resultDelivery");
 
 const MAX_ATTEMPTS = 20;
+
+// The student portal shares this MongoDB and its Question model defines a stale
+// unique index { testId: 1, questionId: 1 }. That index rejects the 2nd+ question
+// for the same test with E11000. Drop it right before inserting questions so test
+// creation never fails, even if the student portal recreates the index.
+const dropStaleQuestionIndex = async () => {
+  try {
+    const db = mongoose.connection.db;
+    const col = db.collection("questions");
+    const indexes = await col.indexes();
+    const stale = indexes.filter((idx) => idx.key.questionId !== undefined);
+    for (const idx of stale) {
+      await col.dropIndex(idx.name);
+    }
+  } catch (err) {
+    // Non-fatal: index may already be gone or collection may not exist yet.
+  }
+};
 
 const isValidDate = (value) => value instanceof Date && !Number.isNaN(value.getTime());
 const validAttemptCount = (value) =>
@@ -101,6 +120,8 @@ const createTest = asyncHandler(async (req, res) => {
 
   await test.populate("createdBy", "name role");
 
+  // Safety net: drop the stale student-portal index before inserting questions
+  await dropStaleQuestionIndex();
   await Question.insertMany(questions.map((q) => ({ ...q, testId: test._id })));
 
   await AllowedCandidate.insertMany(

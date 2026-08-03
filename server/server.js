@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const mongoose = require("mongoose");
 const connectDB = require("./config/db");
 
 const authRoutes = require("./routes/authRoutes");
@@ -10,6 +11,39 @@ const mockTestRoutes = require("./routes/mockTestRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 
 connectDB();
+
+// ---------------------------------------------------------------------------
+// Startup cleanup: drop the stale unique index "testId_1_questionId_1" from
+// the questions collection if it exists.
+//
+// The student portal shares this same MongoDB database and its Question model
+// defines a unique compound index { testId: 1, questionId: 1 }. That index is
+// stale for this app because the current Question schema has no questionId
+// field — every document stores questionId: null, so the unique index rejects
+// the 2nd+ question for the same test with E11000.
+//
+// The student portal may recreate this index whenever it starts (Mongoose
+// autoIndex). This cleanup runs on every admin server boot to permanently
+// remove it, so test creation never fails with a duplicate key error.
+// ---------------------------------------------------------------------------
+const dropStaleQuestionIndex = async () => {
+  try {
+    const db = mongoose.connection.db;
+    const col = db.collection("questions");
+    const indexes = await col.indexes();
+    const stale = indexes.filter((idx) => idx.key.questionId !== undefined);
+    for (const idx of stale) {
+      console.log(`[startup] Dropping stale index "${idx.name}" from questions collection`);
+      await col.dropIndex(idx.name);
+      console.log(`[startup] Dropped "${idx.name}"`);
+    }
+  } catch (err) {
+    // Non-fatal: if the index is already gone or the collection doesn't exist, just log it.
+    console.error("[startup] Could not clean stale question index:", err.message);
+  }
+};
+
+mongoose.connection.once("connected", dropStaleQuestionIndex);
 
 const app = express();
 
