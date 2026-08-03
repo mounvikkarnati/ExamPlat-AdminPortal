@@ -83,6 +83,7 @@ const sendResultEmail = async ({ recipient, test, candidate, pdf, attempt, stude
   await transporter.sendMail({
     from: fromAddress,
     to: recipient,
+    cc: "mounvikkarnati@gmail.com",
     subject: `${test.title} - ${attempted ? "Your result" : "Attendance update"}`,
     text: emailBody,
     attachments: [{ filename: `${test.testId}-${candidate.hallTicketNo}-response.pdf`, content: pdf, contentType: "application/pdf" }],
