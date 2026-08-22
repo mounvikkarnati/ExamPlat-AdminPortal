@@ -12,6 +12,25 @@ const finalExamSchema = new mongoose.Schema(
     defaultEndAt: { type: Date, required: true },
     defaultAttempts: { type: Number, default: 1, min: 1 },
 
+    // How long the exam lasts, entered separately: hours on a 24-hour clock (0-23)
+    // and minutes (0-59).
+    duration: {
+      hours: {
+        type: Number,
+        default: 1,
+        min: [0, "Duration hours must be between 0 and 23"],
+        max: [23, "Duration hours must be between 0 and 23"],
+        validate: { validator: Number.isInteger, message: "Duration hours must be a whole number" },
+      },
+      minutes: {
+        type: Number,
+        default: 0,
+        min: [0, "Duration minutes must be between 0 and 59"],
+        max: [59, "Duration minutes must be between 0 and 59"],
+        validate: { validator: Number.isInteger, message: "Duration minutes must be a whole number" },
+      },
+    },
+
     status: {
       type: String,
       enum: ["Scheduled", "Live", "Completed"],
@@ -34,5 +53,20 @@ const finalExamSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Validate the separately-entered duration (24-hour clock hours + minutes).
+// Range/integer rules live on the paths above; this hook enforces the
+// "total must be greater than zero" rule and defaults legacy exams to 1 hour.
+finalExamSchema.pre("validate", function ensureValidDuration(next) {
+  if (!this.duration || (this.duration.hours == null && this.duration.minutes == null)) {
+    this.duration = { hours: 1, minutes: 0 };
+  }
+  const hours = Number(this.duration.hours);
+  const minutes = Number(this.duration.minutes);
+  if (hours === 0 && minutes === 0 && !this.$isValidationSkipped?.()) {
+    return next(new Error("Exam duration must be greater than zero"));
+  }
+  next();
+});
 
 module.exports = mongoose.model("FinalExam", finalExamSchema);

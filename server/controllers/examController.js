@@ -18,6 +18,30 @@ const isValidDate = (value) => value instanceof Date && !Number.isNaN(value.getT
 const validAttemptCount = (value) =>
   Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= MAX_ATTEMPTS;
 
+// Exam duration arrives as two separate fields: hours on a 24-hour clock (0-23)
+// and minutes (0-59). Hours may be 0 for exams shorter than an hour — only the
+// combined total must be greater than zero. Returns { hours, minutes } or
+// { message } when invalid.
+const parseDurationInput = (hoursRaw, minutesRaw) => {
+  // Blank / undefined fields count as 0, so exams under an hour can use just minutes.
+  const blank = (v) => v === undefined || v === null || String(v).trim() === "";
+  const hours = Number(blank(hoursRaw) ? 0 : hoursRaw);
+  const minutes = Number(blank(minutesRaw) ? 0 : minutesRaw);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) {
+    return { message: "Exam duration must be whole numbers in the separate hour and minute fields" };
+  }
+  if (hours < 0 || hours > 23) {
+    return { message: "Duration hours must be between 0 and 23" };
+  }
+  if (minutes < 0 || minutes > 59) {
+    return { message: "Duration minutes must be between 0 and 59" };
+  }
+  if (hours + minutes === 0) {
+    return { message: "Exam duration must be greater than zero — for exams under an hour enter 0 hours plus minutes" };
+  }
+  return { hours, minutes };
+};
+
 const currentStatus = (test) => {
   const now = Date.now();
   if (new Date(test.defaultEndAt).getTime() < now) return "Completed";
@@ -124,7 +148,7 @@ const createExam = asyncHandler(async (req, res) => {
     throw new Error("Forbidden: Super Admin access required");
   }
 
-  const { title, subject, startAt, endAt, defaultAttempts, examCategory, selectAllStudents } = req.body;
+  const { title, subject, startAt, endAt, defaultAttempts, durationHours, durationMinutes, examCategory, selectAllStudents } = req.body;
   const questionFile = req.files?.questionFile?.[0];
   const candidateFile = req.files?.candidateFile?.[0];
   const enrollAll = selectAllStudents === "true" || selectAllStudents === true;
@@ -148,6 +172,14 @@ const createExam = asyncHandler(async (req, res) => {
   if (!validAttemptCount(defaultAttempts ?? 1)) {
     res.status(400);
     throw new Error(`Default attempts must be a whole number from 1 to ${MAX_ATTEMPTS}`);
+  }
+
+  // Hours of 0 are valid for exams shorter than an hour; blank fields count as
+  // 0. Only a combined total of 0 is rejected by parseDurationInput.
+  const parsedDuration = parseDurationInput(durationHours, durationMinutes);
+  if (parsedDuration.message) {
+    res.status(400);
+    throw new Error(parsedDuration.message);
   }
 
   const allowedAdmins = await resolveAllowedAdmins(parseAllowedAdmins(req.body.allowedAdmins));
@@ -202,6 +234,7 @@ const createExam = asyncHandler(async (req, res) => {
     defaultStartAt: startDate,
     defaultEndAt: endDate,
     defaultAttempts: Number(defaultAttempts ?? 1),
+    duration: { hours: parsedDuration.hours, minutes: parsedDuration.minutes },
     status: "Scheduled",
     candidateCount: candidates.length,
     examCategory,
@@ -234,6 +267,7 @@ const createExam = asyncHandler(async (req, res) => {
     details: {
       finalExamId,
       examCategory,
+      duration: { hours: parsedDuration.hours, minutes: parsedDuration.minutes },
       selectAllStudents: enrollAll,
       allowAllAdmins,
       allowedAdmins: allowedAdmins.map((a) => String(a)),
@@ -305,12 +339,13 @@ const modifyExamDefaults = asyncHandler(async (req, res) => {
   const exam = await findExamOrThrow(req.params.id, res);
   assertCanManageExam(exam, req.admin, res);
 
-  const { startAt, endAt, startTime, endTime, defaultAttempts } = req.body;
+  const { startAt, endAt, startTime, endTime, defaultAttempts, durationHours, durationMinutes } = req.body;
 
   const before = {
     defaultStartAt: exam.defaultStartAt,
     defaultEndAt: exam.defaultEndAt,
     defaultAttempts: exam.defaultAttempts,
+    duration: { hours: exam.duration?.hours, minutes: exam.duration?.minutes },
   };
 
   if (startAt) {
@@ -362,6 +397,22 @@ const modifyExamDefaults = asyncHandler(async (req, res) => {
     exam.defaultAttempts = Number(defaultAttempts);
   }
 
+  // Optional duration update — hours (24-hour clock) and minutes are separate fields.
+  // If only one of the two is sent, the other keeps its current value.
+  const hasHoursInput = durationHours !== undefined && String(durationHours).trim() !== "";
+  const hasMinutesInput = durationMinutes !== undefined && String(durationMinutes).trim() !== "";
+  if (hasHoursInput || hasMinutesInput) {
+    const parsedDuration = parseDurationInput(
+      hasHoursInput ? durationHours : (exam.duration?.hours ?? 0),
+      hasMinutesInput ? durationMinutes : (exam.duration?.minutes ?? 0)
+    );
+    if (parsedDuration.message) {
+      res.status(400);
+      throw new Error(parsedDuration.message);
+    }
+    exam.duration = { hours: parsedDuration.hours, minutes: parsedDuration.minutes };
+  }
+
   await exam.save();
 
   await logAction({
@@ -375,6 +426,7 @@ const modifyExamDefaults = asyncHandler(async (req, res) => {
         defaultStartAt: exam.defaultStartAt,
         defaultEndAt: exam.defaultEndAt,
         defaultAttempts: exam.defaultAttempts,
+        duration: { hours: exam.duration?.hours, minutes: exam.duration?.minutes },
       },
     },
     ipAddress: req.ip,

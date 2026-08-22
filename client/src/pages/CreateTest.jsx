@@ -12,6 +12,8 @@ export default function CreateTest() {
     startAt: "",
     endAt: "",
     defaultAttempts: 1,
+    durationHours: 1,
+    durationMinutes: 0,
     examCategory: "JEE",
   });
   const [selectAllStudents, setSelectAllStudents] = useState(false);
@@ -42,6 +44,12 @@ export default function CreateTest() {
 
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
+  // Duration hours may be 0 (exams under an hour); an empty field counts as 0.
+  const updateDurationHours = (e) =>
+    setForm((f) => ({ ...f, durationHours: e.target.value === "" ? 0 : e.target.value }));
+  const updateDurationMinutes = (e) =>
+    setForm((f) => ({ ...f, durationMinutes: e.target.value === "" ? 0 : e.target.value }));
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrors(null);
@@ -63,6 +71,26 @@ export default function CreateTest() {
         questionErrors: [],
         candidateErrors: [],
         message: "End date and time must be after the start date and time.",
+      });
+      return;
+    }
+
+    const durHours = Number(form.durationHours);
+    const durMinutes = Number(form.durationMinutes);
+    if (
+      !Number.isInteger(durHours) ||
+      !Number.isInteger(durMinutes) ||
+      durHours < 0 ||
+      durHours > 23 ||
+      durMinutes < 0 ||
+      durMinutes > 59 ||
+      durHours + durMinutes === 0
+    ) {
+      setErrors({
+        questionErrors: [],
+        candidateErrors: [],
+        message:
+          "Exam duration must be greater than zero. Hours can be 0 for exams under an hour — just set the minutes (e.g. 0h 45m).",
       });
       return;
     }
@@ -205,18 +233,46 @@ export default function CreateTest() {
                 />
               </div>
             </div>
-            <div>
-              <label className="label">Default Attempts</label>
-              <input
-                type="number"
-                min={1}
-                max={20}
-                required
-                className="input w-32"
-                value={form.defaultAttempts}
-                onChange={update("defaultAttempts")}
-              />
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="label">Default Attempts</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  required
+                  className="input"
+                  value={form.defaultAttempts}
+                  onChange={update("defaultAttempts")}
+                />
+              </div>
+              <div>
+                <label className="label">Duration — Hours (24h)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  className="input"
+                  value={form.durationHours}
+                  onChange={updateDurationHours}
+                />
+              </div>
+              <div>
+                <label className="label">Duration — Minutes</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={59}
+                  className="input"
+                  value={form.durationMinutes}
+                  onChange={updateDurationMinutes}
+                />
+              </div>
             </div>
+            <p className="text-xs text-slate-500">
+              Exam length shown to students: {Number(form.durationHours) || 0}h{" "}
+              {Number(form.durationMinutes) || 0}m — they must finish within this time.
+            </p>
           </div>
 
           <div className="card space-y-3 p-6">
@@ -337,6 +393,9 @@ export default function CreateTest() {
                 {new Date(form.startAt).toLocaleString()}
               </p>
               <p className="text-xs text-slate-400">to {new Date(form.endAt).toLocaleString()}</p>
+              <p className="mt-2 border-t border-slate-200 pt-2 text-xs font-semibold text-slate-500">
+                Duration: {Number(form.durationHours) || 0}h {Number(form.durationMinutes) || 0}m
+              </p>
             </div>
           )}
         </aside>

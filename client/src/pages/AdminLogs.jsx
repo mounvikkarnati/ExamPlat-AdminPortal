@@ -119,7 +119,7 @@ export default function AdminLogs() {
                 <th className="px-5 py-3">Action</th>
                 <th className="px-5 py-3">Target</th>
                 <th className="px-5 py-3">IP address</th>
-                <th className="px-5 py-3" />
+                <th className="px-5 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

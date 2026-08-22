@@ -27,6 +27,8 @@ export default function ModifyTest() {
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
   const [defaultAttempts, setDefaultAttempts] = useState(1);
+  const [durHours, setDurHours] = useState(1);
+  const [durMinutes, setDurMinutes] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -62,6 +64,8 @@ export default function ModifyTest() {
       setStartAt(toLocalInput(data.test.defaultStartAt));
       setEndAt(toLocalInput(data.test.defaultEndAt));
       setDefaultAttempts(data.test.defaultAttempts);
+      setDurHours(data.test.duration?.hours ?? 1);
+      setDurMinutes(data.test.duration?.minutes ?? 0);
       if (data.canEditManagers) {
         setAllowAllAdmins(!!data.test.allowAllAdmins);
         setSelectedAdmins(new Set((data.test.allowedAdmins || []).map((a) => String(a._id || a))));
@@ -103,7 +107,13 @@ export default function ModifyTest() {
     setSaved(false);
     setSaveError("");
     try {
-      const { data } = await api.put(`/tests/${id}`, { startAt, endAt, defaultAttempts });
+      const { data } = await api.put(`/tests/${id}`, {
+        startAt,
+        endAt,
+        defaultAttempts,
+        durationHours: durHours,
+        durationMinutes: durMinutes,
+      });
       setTest(data);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -202,6 +212,7 @@ export default function ModifyTest() {
             <p className="text-sm text-slate-500">
               {test.finalExamId || test.testId} · {questionCount} questions · {test.candidateCount} students
               {test.selectAllStudents ? ` · All ${test.examCategory} students` : ""}
+              {` · Duration ${test.duration?.hours ?? 1}h ${test.duration?.minutes ?? 0}m`}
             </p>
             <p className="mt-1 text-sm text-slate-500">Created by {test.createdBy?.name || "—"}</p>
             {!canManage && (
@@ -249,7 +260,7 @@ export default function ModifyTest() {
             </span>
           )}
         </div>
-        <form onSubmit={handleSaveDefaults} className="grid grid-cols-3 gap-4 items-end">
+        <form onSubmit={handleSaveDefaults} className="grid grid-cols-2 gap-4 items-end lg:grid-cols-5">
           <div>
             <label className="label">Start Date &amp; Time</label>
             <input
@@ -283,6 +294,30 @@ export default function ModifyTest() {
               value={defaultAttempts}
               disabled={!canManage}
               onChange={(e) => setDefaultAttempts(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Duration — Hours (24h)</label>
+            <input
+              type="number"
+              min={0}
+              max={23}
+              className="input"
+              value={durHours}
+              disabled={!canManage}
+              onChange={(e) => setDurHours(e.target.value === "" ? 0 : e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Duration — Minutes</label>
+            <input
+              type="number"
+              min={0}
+              max={59}
+              className="input"
+              value={durMinutes}
+              disabled={!canManage}
+              onChange={(e) => setDurMinutes(e.target.value === "" ? 0 : e.target.value)}
             />
           </div>
           {canManage && (
@@ -355,7 +390,7 @@ export default function ModifyTest() {
               <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-left">Score</th>
               <th className="px-3 py-2 text-left">Attempt</th>
-              <th className="px-3 py-2 text-left" />
+              <th className="px-3 py-2 text-left"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
