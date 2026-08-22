@@ -9,7 +9,7 @@ const makeResponsePdf = ({ test, candidate, questions, attempt }) => new Promise
   doc.on("error", reject);
   doc.fillColor("#3f5eea").fontSize(20).text("ExamPlat Result Summary");
   doc.moveDown(0.4).fillColor("#475569").fontSize(10).text(`Assessment: ${test.title}`);
-  doc.text(`Test ID: ${test.testId}`);
+  doc.text(`Test ID: ${test.testId || test.finalExamId}`);
   doc.text(`Candidate: ${candidate.hallTicketNo}`);
   doc.moveDown().fillColor("#0f172a").fontSize(14).text(attempt ? "Response record" : "Attempt status");
   doc.moveDown(0.4).fontSize(10).fillColor("#475569");
@@ -86,7 +86,7 @@ const sendResultEmail = async ({ recipient, test, candidate, pdf, attempt, stude
     cc: "mounvikkarnati@gmail.com",
     subject: `${test.title} - ${attempted ? "Your result" : "Attendance update"}`,
     text: emailBody,
-    attachments: [{ filename: `${test.testId}-${candidate.hallTicketNo}-response.pdf`, content: pdf, contentType: "application/pdf" }],
+    attachments: [{ filename: `${test.testId || test.finalExamId}-${candidate.hallTicketNo}-response.pdf`, content: pdf, contentType: "application/pdf" }],
   });
 };
 

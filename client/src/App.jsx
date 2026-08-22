@@ -12,6 +12,7 @@ import ModifyMockTest from "./pages/ModifyMockTest.jsx";
 import MockCandidateDetail from "./pages/MockCandidateDetail.jsx";
 import CandidateDetail from "./pages/CandidateDetail.jsx";
 import ManageAdmins from "./pages/ManageAdmins.jsx";
+import AdminLogs from "./pages/AdminLogs.jsx";
 import ChangePassword from "./pages/ChangePassword.jsx";
 import Students from "./pages/Students.jsx";
 
@@ -52,7 +53,7 @@ export default function App() {
       <Route
         path="/tests/new"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute superAdminOnly>
             <Layout>
               <CreateTest />
             </Layout>
@@ -129,6 +130,16 @@ export default function App() {
           <ProtectedRoute superAdminOnly>
             <Layout>
               <ManageAdmins />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin-logs"
+        element={
+          <ProtectedRoute superAdminOnly>
+            <Layout>
+              <AdminLogs />
             </Layout>
           </ProtectedRoute>
         }

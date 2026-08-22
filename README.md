@@ -41,16 +41,18 @@ left as `/api` if you prefer same-origin requests.
 |---|---|---|
 | 3.1 | Single login for Admin + Super Admin, server-determined role | `authController.js`, `Login.jsx` |
 | 3.2 | Manage Admins: list / create / disable (Super Admin only) | `adminController.js`, `ManageAdmins.jsx` |
-| 4 | Create Test: question upload (.xlsx/.json), schedule, candidate allow-list (.xlsx) | `testController.js#createTest`, `CreateTest.jsx` |
+| 4 | Create Examination (Super Admin only): question upload (.xlsx/.json), schedule, candidates, admin modify-access picker | `examController.js#createExam`, `CreateTest.jsx` |
 | 4.1 | Row-level validation errors on question upload | `utils/parseUploads.js` |
-| 5.1 | Test List | `TestList.jsx` |
-| 5.2 | Modify Test: edit time-of-day (not date), attempts, add candidate, search | `ModifyTest.jsx`, `testController.js` |
-| 5.3 | Per-candidate overrides vs. test defaults | `AllowedCandidate` model (`*Override` fields), `CandidateDetail.jsx` |
-| 5.4 | Recurring slots via repeating Create Test | supported naturally — each Create Test call gets its own `testId` |
-| 6 | Candidate detail: status, violations, score | `CandidateDetail.jsx`, `getCandidateDetail` |
-| 7 | Data model | `server/models/*.js` |
+| 5.1 | Examination List (with per-exam modify-access flag) | `TestList.jsx`, `examController.js` |
+| 5.2 | Modify Examination: edit schedule/attempts, add candidate, search; Super Admin picks which admins can modify | `ModifyTest.jsx`, `examController.js` |
+| 5.3 | Per-candidate overrides vs. exam defaults | `FinalAllowedCandidate` model (`*Override` fields), `CandidateDetail.jsx` |
+| 5.4 | Recurring slots via repeating Create Examination | supported naturally — each Create call gets its own `finalExamId` |
+| 5.5 | Mock tests (regular admins create, creator manages) | `mockTestController.js`, `MockTestList.jsx`, `CreateMockTest.jsx`, `ModifyMockTest.jsx` |
+| 6 | Candidate detail: status, violations, score | `CandidateDetail.jsx`, `getCandidateDetail` (`examController.js`) |
+| 7 | Data model (final exams use `finalexams`, `finalquestions`, `finalallowedcandidates`, `finalattempts` collections) | `server/models/*.js` |
 | NFR-A-01 | Salted bcrypt hashes, forced password change | `Admin.js`, `seed.js`, `changePassword` |
 | NFR-A-02 | Audit log of schedule/attempt edits | `AdminLog.js`, `utils/helpers.js#logAction` |
+| NFR-A-02+ | Admin logs viewer (Super Admin): search/filter/paginate every entry from `adminlogs` | `adminController.js#listLogs`, `AdminLogs.jsx` |
 | NFR-A-04 | Admin sessions use their own short-lived JWTs | `middleware/auth.js` |
 | NFR-A-05 | Server-side search/pagination on candidate list | `listCandidates` (skip/limit + text index) |
 

@@ -28,7 +28,9 @@ export default function CandidateDetail() {
     });
   };
 
-  useEffect(() => { load(); }, [testId, candidateId]); // eslint-disable-line
+  useEffect(() => {
+    load();
+  }, [testId, candidateId]); // eslint-disable-line
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -52,57 +54,79 @@ export default function CandidateDetail() {
   };
 
   if (!data) return <p className="text-sm text-slate-500">Loading…</p>;
-  const { candidate, effective } = data;
+  const { candidate, effective, canManage, attempt } = data;
 
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <Link to={`/tests/${testId}`} className="text-sm text-brand-600 hover:underline">← Back to Modify Test</Link>
-        <h1 className="text-xl font-semibold text-slate-900 mt-2">{candidate.hallTicketNo}</h1>
-        <p className="text-sm text-slate-500 capitalize">Status: {candidate.status}</p>
+        <Link to={`/tests/${testId}`} className="text-sm text-brand-600 hover:underline">
+          ← Back to examination
+        </Link>
+        <h1 className="mt-2 text-xl font-semibold text-slate-900">{candidate.hallTicketNo}</h1>
+        <p className="text-sm capitalize text-slate-500">Status: {candidate.status}</p>
+        {!canManage && (
+          <p className="mt-2 text-sm font-medium text-amber-700">
+            View only — you don't have modify access to this examination.
+          </p>
+        )}
       </div>
 
       <div className="card p-6">
-        <h2 className="font-medium text-slate-800 mb-4">Effective Settings</h2>
+        <h2 className="mb-4 font-medium text-slate-800">Effective settings</h2>
         <div className="grid grid-cols-3 gap-4 text-sm">
-          <div><p className="text-slate-500">Start</p><p className="font-medium">{new Date(effective.startAt).toLocaleString()}</p></div>
-          <div><p className="text-slate-500">End</p><p className="font-medium">{new Date(effective.endAt).toLocaleString()}</p></div>
-          <div><p className="text-slate-500">Attempts</p><p className="font-medium">{effective.attempts} (used: {candidate.attemptsUsed})</p></div>
+          <div>
+            <p className="text-slate-500">Start</p>
+            <p className="font-medium">{new Date(effective.startAt).toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-slate-500">End</p>
+            <p className="font-medium">{new Date(effective.endAt).toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-slate-500">Attempts</p>
+            <p className="font-medium">
+              {effective.attempts} (used: {candidate.attemptsUsed})
+            </p>
+          </div>
         </div>
       </div>
 
-      <div className="card p-6">
-        <h2 className="font-medium text-slate-800 mb-1">Per-Candidate Overrides</h2>
-        <p className="text-xs text-slate-500 mb-4">
-          Only applies to this candidate — the test-wide default shown to everyone else is unaffected (Section 5.3).
-        </p>
-        <form onSubmit={handleSave} className="grid grid-cols-3 gap-4 items-end">
-          <div>
-            <label className="label">Start Override</label>
-            <input type="datetime-local" className="input" value={startOverride} onChange={(e) => setStartOverride(e.target.value)} />
-          </div>
-          <div>
-            <label className="label">End Override</label>
-            <input type="datetime-local" className="input" value={endOverride} onChange={(e) => setEndOverride(e.target.value)} />
-          </div>
-          <div>
-            <label className="label">Attempts Override</label>
-            <input type="number" min={1} max={20} className="input" value={attemptsOverride} onChange={(e) => setAttemptsOverride(e.target.value)} placeholder="inherit default" />
-          </div>
-          <div className="col-span-3 flex items-center gap-3">
-            <button type="submit" disabled={saving} className="btn-primary">{saving ? "Saving…" : "Save Overrides"}</button>
-            {saved && <span className="text-sm text-green-600">Saved ✓</span>}
-            {error && <span className="text-sm text-red-600">{error}</span>}
-          </div>
-        </form>
-      </div>
+      {canManage ? (
+        <div className="card p-6">
+          <h2 className="mb-4 font-medium text-slate-800">Per-candidate overrides</h2>
+          <p className="mb-4 text-xs text-slate-500">
+            Only applies to this candidate — the exam-wide default shown to everyone else is unaffected.
+          </p>
+          <form onSubmit={handleSave} className="grid grid-cols-3 gap-4 items-end">
+            <div>
+              <label className="label">Start Override</label>
+              <input type="datetime-local" className="input" value={startOverride} onChange={(e) => setStartOverride(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">End Override</label>
+              <input type="datetime-local" className="input" value={endOverride} onChange={(e) => setEndOverride(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Attempts Override</label>
+              <input type="number" min={1} max={20} className="input" value={attemptsOverride} onChange={(e) => setAttemptsOverride(e.target.value)} placeholder="inherit default" />
+            </div>
+            <div className="col-span-3 flex items-center gap-3">
+              <button type="submit" disabled={saving} className="btn-primary">
+                {saving ? "Saving…" : "Save overrides"}
+              </button>
+              {saved && <span className="text-sm text-green-600">Saved ✓</span>}
+              {error && <span className="text-sm text-red-600">{error}</span>}
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       <div className="card p-6">
-        <h2 className="font-medium text-slate-800 mb-4">Violation Log</h2>
+        <h2 className="mb-4 font-medium text-slate-800">Violation log</h2>
         {candidate.violations?.length ? (
           <ul className="divide-y divide-slate-100 text-sm">
             {candidate.violations.map((v, i) => (
-              <li key={i} className="py-2 flex justify-between">
+              <li key={i} className="flex justify-between py-2">
                 <span className="font-medium text-slate-700">{v.type}</span>
                 <span className="text-slate-500">{new Date(v.timestamp).toLocaleString()}</span>
               </li>
@@ -114,12 +138,55 @@ export default function CandidateDetail() {
       </div>
 
       <div className="card p-6">
-        <h2 className="font-medium text-slate-800 mb-2">Result</h2>
-        <p className="text-sm text-slate-600">
-          Score: <span className="font-medium">{candidate.score ?? "Not yet available"}</span>
-        </p>
+        <h2 className="mb-2 font-medium text-slate-800">Result</h2>
+        {attempt ? (
+          <div className="space-y-2 text-sm">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-slate-500">Score</p>
+                <p className="font-medium text-slate-800">
+                  {attempt.score ?? "—"} {attempt.totalMarks ? `/ ${attempt.totalMarks}` : ""}
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-500">Percentage</p>
+                <p className="font-medium text-slate-800">{attempt.percentage ?? 0}%</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Attempt</p>
+                <p className="font-medium text-slate-800">#{attempt.attemptNumber ?? 1}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Time taken</p>
+                <p className="font-medium text-slate-800">{attempt.timeTaken ?? 0} min</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Correct</p>
+                <p className="font-medium text-green-600">{attempt.correctAnswers ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Wrong</p>
+                <p className="font-medium text-red-600">{attempt.wrongAnswers ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Unanswered</p>
+                <p className="font-medium text-slate-600">{attempt.unanswered ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Submitted</p>
+                <p className="font-medium text-slate-600">
+                  {attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : "—"}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600">
+            Score: <span className="font-medium">{candidate.score ?? "Not yet available"}</span>
+          </p>
+        )}
         {candidate.submissionReason && (
-          <p className="text-sm text-slate-500 mt-1">Submission reason: {candidate.submissionReason}</p>
+          <p className="mt-1 text-sm text-slate-500">Submission reason: {candidate.submissionReason}</p>
         )}
       </div>
     </div>

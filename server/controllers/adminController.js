@@ -1,6 +1,7 @@
 const asyncHandler = require("express-async-handler");
 const bcrypt = require("bcryptjs");
 const Admin = require("../models/Admin");
+const AdminLog = require("../models/AdminLog");
 const { logAction } = require("../utils/helpers");
 
 // @route GET /api/admins   (Section 3.2 - list of existing Admin accounts)
@@ -79,4 +80,52 @@ const disableAdmin = asyncHandler(async (req, res) => {
   res.json({ id: admin._id, active: admin.active });
 });
 
-module.exports = { listAdmins, createAdmin, disableAdmin };
+// @route GET /api/admins/logs   (Section: audit trail - Super Admin only)
+// Returns entries from the adminlogs collection (NFR-A-02), newest first, with the
+// admin who performed each action populated. Supports keyword search, action filter,
+// and pagination so the full trail can be reviewed at any scale.
+const listLogs = asyncHandler(async (req, res) => {
+  const { search = "", action = "All", page = 1, limit = 25 } = req.query;
+  const safePage = Math.max(1, Number.parseInt(page, 10) || 1);
+  const safeLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
+
+  const filter = {};
+  if (action && action !== "All") filter.action = action;
+
+  if (search.trim()) {
+    const term = search.trim();
+    // Allow searching the acting admin's name/email as well as raw log fields.
+    const matchingAdmins = await Admin.find({
+      $or: [{ name: { $regex: term, $options: "i" } }, { email: { $regex: term, $options: "i" } }],
+    }).select("_id");
+    const adminIds = matchingAdmins.map((a) => a._id);
+
+    filter.$or = [
+      { action: { $regex: term, $options: "i" } },
+      { targetCollection: { $regex: term, $options: "i" } },
+      { ipAddress: { $regex: term, $options: "i" } },
+      ...(adminIds.length ? [{ adminId: { $in: adminIds } }] : []),
+    ];
+  }
+
+  const skip = (safePage - 1) * safeLimit;
+  const [logs, total, actions] = await Promise.all([
+    AdminLog.find(filter)
+      .populate("adminId", "name email role")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(safeLimit),
+    AdminLog.countDocuments(filter),
+    AdminLog.distinct("action"),
+  ]);
+
+  res.json({
+    logs,
+    total,
+    actions: actions.sort(),
+    page: safePage,
+    limit: safeLimit,
+  });
+});
+
+module.exports = { listAdmins, createAdmin, disableAdmin, listLogs };

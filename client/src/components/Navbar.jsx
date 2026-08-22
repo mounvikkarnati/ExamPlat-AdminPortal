@@ -12,6 +12,7 @@ const icons = {
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   close: <path d="m6 6 12 12M18 6 6 18" />,
   logout: <path d="M10 17l5-5-5-5M15 12H3M13 4h5v16h-5" />,
+  document: <path d="M7 3h8l4 4v14H7V3Zm8 0v4h4M10 12h5M10 15h5" />,
 };
 
 export function Icon({ name, className = "" }) {
@@ -25,11 +26,12 @@ export default function Navbar() {
   const links = [
     ["/", "Overview", "grid"],
     ["/tests", "Examinations", "exam"],
-    ["/tests/new", "Create exam", "plus"],
+    ...(isSuperAdmin ? [["/tests/new", "Create exam", "plus"]] : []),
     ["/mock-tests", "Mock tests", "exam"],
     ...(isAdmin ? [["/mock-tests/new", "Create mock test", "plus"]] : []),
     ["/students", "Students", "people"],
     ...(isSuperAdmin ? [["/admins", "Team access", "people"]] : []),
+    ...(isSuperAdmin ? [["/admin-logs", "Admin logs", "document"]] : []),
   ];
   const linkClass = ({ isActive }) => `side-link ${isActive ? "side-link-active" : ""}`;
   const handleLogout = () => { logout(); navigate("/login"); };

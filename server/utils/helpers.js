@@ -28,4 +28,10 @@ const generateMockTestId = () => {
   return `MTK-${year}-${rand}`;
 };
 
-module.exports = { generateToken, logAction, generateTestId, generateMockTestId };
+const generateFinalExamId = () => {
+  const year = new Date().getFullYear();
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  return `FNL-${year}-${rand}`;
+};
+
+module.exports = { generateToken, logAction, generateTestId, generateMockTestId, generateFinalExamId };
