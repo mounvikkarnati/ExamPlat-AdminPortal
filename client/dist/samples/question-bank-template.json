@@ -1,0 +1,22 @@
+[
+  {
+    "questionText": "What is the SI unit of mass?",
+    "option1": "Joule",
+    "option2": "Newton",
+    "option3": "Pascal",
+    "option4": "Watt",
+    "correctOption": "B",
+    "subject": "Physics",
+    "topic": "Units and Measurements"
+  },
+  {
+    "questionText": "Which gas is least abundant in Earth's atmosphere?",
+    "option1": "Oxygen",
+    "option2": "Carbon Dioxide",
+    "option3": "Nitrogen",
+    "option4": "Hydrogen",
+    "correctOption": "C",
+    "subject": "Chemistry",
+    "topic": "Atmospheric Chemistry"
+  }
+]

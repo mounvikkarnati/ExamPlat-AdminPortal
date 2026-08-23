@@ -276,12 +276,18 @@ export default function CreateTest() {
           </div>
 
           <div className="card space-y-3 p-6">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-brand-600">Step 2</p>
-              <h2 className="mt-1 font-bold text-slate-800">Question bank</h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Excel (.xlsx) following the question template, or an equivalent JSON file.
-              </p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-brand-600">Step 2</p>
+                <h2 className="mt-1 font-bold text-slate-800">Question bank</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Excel (.xlsx) following the question template, or an equivalent JSON file.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <a href="/samples/question-bank-template.xlsx" download className="btn-secondary px-3 py-2 text-xs">⇩ Sample XLSX</a>
+                <a href="/samples/question-bank-template.json" download className="btn-secondary px-3 py-2 text-xs">⇩ Sample JSON</a>
+              </div>
             </div>
             <input
               type="file"
@@ -300,9 +306,13 @@ export default function CreateTest() {
           </div>
 
           <div className="card space-y-4 p-6">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-brand-600">Step 3</p>
-              <h2 className="mt-1 font-bold text-slate-800">Student access</h2>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-brand-600">Step 3</p>
+                <h2 className="mt-1 font-bold text-slate-800">Student access</h2>
+                <p className="mt-1 text-xs text-slate-500">Use this template when uploading a specific student allow-list.</p>
+              </div>
+              <a href="/samples/allowed-candidates-template.xlsx" download className="btn-secondary w-fit px-3 py-2 text-xs">⇩ Sample XLSX</a>
             </div>
             <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
               <input
