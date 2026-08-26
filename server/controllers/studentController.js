@@ -96,24 +96,34 @@ const enrichWithStudents = async (regDocs) => {
 };
 
 // Search filter on examregistrations fields
-const buildFilter = (search) => {
-  if (!search) return {};
-  const re = { $regex: search, $options: "i" };
-  return {
-    $or: [
-      { registrationNumber: re },
-      { examType: re },
-      { status: re },
-    ],
-  };
+// examCategory optionally restricts results to a single booked exam (e.g. "JEE" or "NEET").
+const buildFilter = (search, examCategory) => {
+  const conditions = [];
+
+  if (search) {
+    const re = { $regex: search, $options: "i" };
+    conditions.push({
+      $or: [
+        { registrationNumber: re },
+        { examType: re },
+        { status: re },
+      ],
+    });
+  }
+
+  if (examCategory && examCategory !== "All" && examCategory !== "all") {
+    conditions.push({ examType: { $regex: examCategory, $options: "i" } });
+  }
+
+  return conditions.length ? { $and: conditions } : {};
 };
 
-// GET /api/students?search=&page=1&limit=25
+// GET /api/students?search=&examCategory=JEE&page=1&limit=25
 const listStudents = asyncHandler(async (req, res) => {
-  const { search = "", page = 1, limit = 25 } = req.query;
+  const { search = "", page = 1, limit = 25, examCategory } = req.query;
   const safePage = Math.max(1, Number.parseInt(page, 10) || 1);
   const safeLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 25));
-  const filter = buildFilter(search);
+  const filter = buildFilter(search, examCategory);
 
   const [regDocs, total] = await Promise.all([
     ExamRegistration.find(filter)
@@ -127,10 +137,10 @@ const listStudents = asyncHandler(async (req, res) => {
   res.json({ students, total, page: safePage, limit: safeLimit });
 });
 
-// GET /api/students/export?search=
+// GET /api/students/export?search=&examCategory=JEE
 const exportStudents = asyncHandler(async (req, res) => {
   const regDocs = await ExamRegistration.find(
-    buildFilter(req.query.search || "")
+    buildFilter(req.query.search || "", req.query.examCategory)
   ).sort({ registeredAt: -1, createdAt: -1 });
 
   const rows = await enrichWithStudents(regDocs);

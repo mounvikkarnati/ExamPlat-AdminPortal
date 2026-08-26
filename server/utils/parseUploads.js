@@ -2,11 +2,15 @@ const XLSX = require("xlsx");
 
 /**
  * Parses an uploaded question bank file (.xlsx or .json) into a normalized array:
- * { questionText, options: [4 strings], correctOption: 0-3, subject, topic }
+ * { questionText, options: [4 strings], correctOption: 0-3, subject, topic, image? }
  * Returns { questions, errors } where errors is a line-numbered list of problems (FR-A-04).
  * Does NOT throw on bad rows - collects errors and lets the caller decide (Section 4.1).
+ *
+ * The optional `includeImage` flag toggles reading the optional `image` column
+ * (a GitHub Raw / Cloudinary direct image URL). It is enabled for final exams
+ * only — mock tests ignore the column entirely so it is never stored for them.
  */
-function parseQuestionFile(file) {
+function parseQuestionFile(file, includeImage = false) {
   const isJson = file.originalname.toLowerCase().endsWith(".json");
   let rawRows = [];
 
@@ -45,6 +49,7 @@ function parseQuestionFile(file) {
 
     const subject = String(row.subject || row.topic || "").trim();
     const topic = String(row.topic || "").trim();
+    const image = includeImage ? String(row.image || "").trim() : "";
 
     if (!questionText) {
       errors.push(`Row ${lineNo}: missing question text`);
@@ -72,7 +77,19 @@ function parseQuestionFile(file) {
     }
     seen.add(dupKey);
 
-    questions.push({ questionText, options, correctOption: Number(correctOption), subject, topic });
+    if (image && !/^https?:\/\//i.test(image)) {
+      errors.push(`Row ${lineNo}: image must be an http(s) URL (GitHub Raw or Cloudinary) when provided`);
+      return;
+    }
+
+    questions.push({
+      questionText,
+      options,
+      correctOption: Number(correctOption),
+      subject,
+      topic,
+      ...(includeImage ? { image } : {}),
+    });
   });
 
   return { questions, errors };

@@ -281,7 +281,10 @@ export default function CreateTest() {
                 <p className="text-xs font-bold uppercase tracking-wider text-brand-600">Step 2</p>
                 <h2 className="mt-1 font-bold text-slate-800">Question bank</h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  Excel (.xlsx) following the question template, or an equivalent JSON file.
+                  Excel (.xlsx) following the question template, or an equivalent JSON file. Optional{" "}
+                  <span className="font-medium text-slate-600">image</span> column — a direct{" "}
+                  <span className="font-medium text-slate-600">GitHub Raw / Cloudinary</span> URL that
+                  shows an image between the question and its options.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">

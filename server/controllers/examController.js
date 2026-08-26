@@ -184,7 +184,7 @@ const createExam = asyncHandler(async (req, res) => {
 
   const allowedAdmins = await resolveAllowedAdmins(parseAllowedAdmins(req.body.allowedAdmins));
 
-  const { questions, errors: questionErrors } = parseQuestionFile(questionFile);
+  const { questions, errors: questionErrors } = parseQuestionFile(questionFile, true);
   let candidates = [];
   let candidateErrors = [];
 

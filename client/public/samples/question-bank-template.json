@@ -1,6 +1,7 @@
 [
   {
     "questionText": "What is the SI unit of mass?",
+    "image": "https://raw.githubusercontent.com/ExamPlat/question-assets/main/si-unit-of-mass.png",
     "option1": "Joule",
     "option2": "Newton",
     "option3": "Pascal",

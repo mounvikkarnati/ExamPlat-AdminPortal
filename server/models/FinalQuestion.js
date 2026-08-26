@@ -16,6 +16,9 @@ const finalQuestionSchema = new mongoose.Schema(
     correctOption: { type: Number, required: true, min: 0, max: 3 }, // index into options[]
     subject: { type: String, trim: true, default: "" },
     topic: { type: String, trim: true, default: "" },
+    // Optional direct image URL (GitHub Raw / Cloudinary). Set only for final
+    // exams; the student portal renders it between the question text and options.
+    image: { type: String, trim: true, default: "" },
   },
   { timestamps: true }
 );
