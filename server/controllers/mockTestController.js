@@ -31,6 +31,25 @@ const dropStaleQuestionIndex = async () => {
   }
 };
 
+// The student portal may also leave a stale unique index { candidateId: 1, examId: 1 }
+// on the allowedcandidates collection (same as finalallowedcandidates). Drop it before
+// inserting candidates so mock test creation never fails with E11000.
+const dropStaleAllowedCandidateIndex = async () => {
+  try {
+    const db = mongoose.connection.db;
+    const col = db.collection("allowedcandidates");
+    const indexes = await col.indexes();
+    const stale = indexes.filter(
+      (idx) => idx.key.candidateId !== undefined || idx.key.examId !== undefined
+    );
+    for (const idx of stale) {
+      await col.dropIndex(idx.name);
+    }
+  } catch (err) {
+    // Non-fatal: index may already be gone or collection may not exist yet.
+  }
+};
+
 const isValidDate = (value) => value instanceof Date && !Number.isNaN(value.getTime());
 const validAttemptCount = (value) =>
   Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= MAX_ATTEMPTS;
@@ -186,10 +205,12 @@ const createMockTest = asyncHandler(async (req, res) => {
 
   await test.populate("createdBy", "name role");
 
-  // Safety net: drop the stale student-portal index before inserting questions
+    // Safety net: drop the stale student-portal index before inserting questions
   await dropStaleQuestionIndex();
   await Question.insertMany(questions.map((q) => ({ ...q, testId: test._id })));
 
+  // Safety net: drop the stale student-portal index before inserting candidates
+  await dropStaleAllowedCandidateIndex();
   await AllowedCandidate.insertMany(
     candidates.map((c) => ({
       testId: test._id,
@@ -415,8 +436,9 @@ const addCandidate = asyncHandler(async (req, res) => {
   if (exists) {
     res.status(409);
     throw new Error("This Hall Ticket No. is already on the allow-list for this mock test");
-  }
+    }
 
+  await dropStaleAllowedCandidateIndex();
   const candidate = await AllowedCandidate.create({
     testId: req.params.id,
     hallTicketNo: normalizedTicket,

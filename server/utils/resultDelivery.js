@@ -1,5 +1,6 @@
 const PDFDocument = require("pdfkit");
 const nodemailer = require("nodemailer");
+const { attemptBrowser } = require("./browserDetection");
 
 const makeResponsePdf = ({ test, candidate, questions, attempt }) => new Promise((resolve, reject) => {
   const doc = new PDFDocument({ margin: 48, size: "A4" });
@@ -18,6 +19,7 @@ const makeResponsePdf = ({ test, candidate, questions, attempt }) => new Promise
   } else {
     doc.text(`Score: ${attempt.score ?? "Pending evaluation"} / ${attempt.totalMarks ?? "—"}`);
     doc.text(`Attempt: ${attempt.attemptNumber ?? 1}`);
+    doc.text(`Browser: ${attemptBrowser(attempt) || "—"}`);
     doc.text(`Correct: ${attempt.correctAnswers ?? 0} · Wrong: ${attempt.wrongAnswers ?? 0} · Unanswered: ${attempt.unanswered ?? 0}`);
     doc.text(`Percentage: ${attempt.percentage ?? 0}%`);
     doc.moveDown();
@@ -58,6 +60,7 @@ const sendResultEmail = async ({ recipient, test, candidate, pdf, attempt, stude
   const name = studentName || candidate.hallTicketNo;
   const score = attempt ? `${attempt.score ?? "Pending evaluation"} / ${attempt.totalMarks ?? "—"}` : "Not attempted";
   const attemptNumber = attempt ? attempt.attemptNumber ?? 1 : "—";
+  const browser = attempt ? attemptBrowser(attempt) || "—" : "—";
   const remarks = attempt
     ? `Correct: ${attempt.correctAnswers ?? 0}, Wrong: ${attempt.wrongAnswers ?? 0}, Unanswered: ${attempt.unanswered ?? 0}, Percentage: ${attempt.percentage ?? 0}%`
     : "Candidate did not attempt the examination.";
@@ -71,6 +74,7 @@ const sendResultEmail = async ({ recipient, test, candidate, pdf, attempt, stude
     `Hall Ticket No: ${candidate.hallTicketNo}`,
     `Exam Name: ${test.title}`,
     `Attempt Number: ${attemptNumber}`,
+    `Browser: ${browser}`,
     `Score: ${score}`,
     `Remarks: ${remarks}`,
     ``,

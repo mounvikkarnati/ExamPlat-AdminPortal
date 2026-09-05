@@ -10,6 +10,29 @@ const Admin = require("../models/Admin");
 const { parseQuestionFile, parseCandidateFile } = require("../utils/parseUploads");
 const { generateFinalExamId, logAction } = require("../utils/helpers");
 const { makeResponsePdf, sendResultEmail } = require("../utils/resultDelivery");
+const { attemptBrowser } = require("../utils/browserDetection");
+
+// The student portal shares this MongoDB and may create a stale unique index
+// { candidateId: 1, examId: 1 } on the finalallowedcandidates collection.
+// That index has no corresponding fields in this app's FinalAllowedCandidate
+// schema (which uses testId + hallTicketNo), so documents with candidateId: null
+// and examId: null collide on the 2nd insert with E11000. Drop it right before
+// any insert/create as a safety net (mirrors the dropStaleQuestionIndex pattern).
+const dropStaleAllowedCandidateIndex = async () => {
+  try {
+    const db = mongoose.connection.db;
+    const col = db.collection("finalallowedcandidates");
+    const indexes = await col.indexes();
+    const stale = indexes.filter(
+      (idx) => idx.key.candidateId !== undefined || idx.key.examId !== undefined
+    );
+    for (const idx of stale) {
+      await col.dropIndex(idx.name);
+    }
+  } catch (err) {
+    // Non-fatal: index may already be gone or collection may not exist yet.
+  }
+};
 
 const MAX_ATTEMPTS = 20;
 const EXAM_CATEGORIES = ["JEE", "NEET"];
@@ -246,8 +269,9 @@ const createExam = asyncHandler(async (req, res) => {
 
   await exam.populate("createdBy", "name role");
 
-  await FinalQuestion.insertMany(questions.map((q) => ({ ...q, testId: exam._id })));
+    await FinalQuestion.insertMany(questions.map((q) => ({ ...q, testId: exam._id })));
 
+  await dropStaleAllowedCandidateIndex();
   await FinalAllowedCandidate.insertMany(
     candidates.map((c) => ({
       testId: exam._id,
@@ -488,30 +512,32 @@ const listCandidates = asyncHandler(async (req, res) => {
     FinalAllowedCandidate.countDocuments(filter),
   ]);
 
-  // Fetch scores from finalattempts for this exam
-  // NOTE: testMongoId is stored as a STRING in the finalattempts collection
+  // Fetch scores from finalattempts for this exam.
+  // NOTE: testMongoId is stored as a STRING in the finalattempts collection.
+  // The Exam Portal stores the candidate link on `registrationId` (= the
+  // finalallowedcandidates _id), so join attempts directly to candidates by
+  // that _id — the OLD studentId/reg join was broken and never surfaced data.
   const attempts = await FinalAttempt.find({ testMongoId: String(exam._id) });
-  const scoreByHallTicket = new Map();
+  const bestAttemptByCandidateId = new Map();
   for (const a of attempts) {
-    // Find the registration to map studentId -> hallTicketNo
-    const reg = await ExamRegistration.findById(a.registrationId);
-    if (reg && reg.registrationNumber) {
-      const hallTicket = String(reg.registrationNumber).trim();
-      if (!scoreByHallTicket.has(hallTicket) || (a.attemptNumber || 1) > (scoreByHallTicket.get(hallTicket)?.attemptNumber || 0)) {
-        scoreByHallTicket.set(hallTicket, a);
-      }
+    const candidateId = a.registrationId ? String(a.registrationId) : String(a.studentId || '');
+    if (!candidateId) continue;
+    const existing = bestAttemptByCandidateId.get(candidateId);
+    if (!existing || (a.attemptNumber || 1) > (existing.attemptNumber || 0)) {
+      bestAttemptByCandidateId.set(candidateId, a);
     }
   }
 
   const enriched = candidates.map((c) => {
     const obj = c.toObject();
-    const attempt = scoreByHallTicket.get(c.hallTicketNo);
+    const attempt = bestAttemptByCandidateId.get(String(c._id));
     if (attempt) {
       obj.score = attempt.score;
       obj.totalMarks = attempt.totalMarks;
       obj.attemptNumber = attempt.attemptNumber;
       obj.percentage = attempt.percentage;
       obj.attemptStatus = attempt.status;
+      obj.browser = attemptBrowser(attempt);
     }
     return obj;
   });
@@ -537,6 +563,7 @@ const addCandidate = asyncHandler(async (req, res) => {
     throw new Error("This Hall Ticket No. is already on the allow-list for this examination");
   }
 
+    await dropStaleAllowedCandidateIndex();
   const candidate = await FinalAllowedCandidate.create({
     testId: req.params.id,
     hallTicketNo: normalizedTicket,
@@ -631,18 +658,28 @@ const getCandidateDetail = asyncHandler(async (req, res) => {
     throw new Error("Candidate not found on this examination");
   }
 
-  // Fetch the latest attempt for this candidate from finalattempts
-  const reg = await ExamRegistration.findOne({ registrationNumber: candidate.hallTicketNo });
+  // Fetch the latest attempt for this candidate from finalattempts.
+  // The Exam Portal stores the connection on `registrationId` (= this
+  // candidate's _id), NOT on studentId (which it sets to a hall-ticket string).
+  // Look it up by registrationId first so the attempt — and its `browser` field —
+  // is actually found. Fall back to the legacy studentId-based join for rows
+  // written by older portal versions.
   let attempt = null;
-  if (reg) {
-    // NOTE: testMongoId is stored as a STRING in the finalattempts collection
-    attempt = await FinalAttempt.findOne({ studentId: reg.studentId, testMongoId: String(exam._id) })
-      .sort({ attemptNumber: -1 });
+  // NOTE: testMongoId is stored as a STRING in the finalattempts collection
+  attempt = await FinalAttempt.findOne({ registrationId: candidate._id, testMongoId: String(exam._id) })
+    .sort({ attemptNumber: -1 });
+  if (!attempt) {
+    const reg = await ExamRegistration.findOne({ registrationNumber: candidate.hallTicketNo });
+    if (reg) {
+      attempt = await FinalAttempt.findOne({ studentId: reg.studentId, testMongoId: String(exam._id) })
+        .sort({ attemptNumber: -1 });
+    }
   }
 
   res.json({
     candidate,
     attempt,
+    browser: attemptBrowser(attempt),
     effective: {
       startAt: candidate.startAtOverride || exam.defaultStartAt,
       endAt: candidate.endAtOverride || exam.defaultEndAt,

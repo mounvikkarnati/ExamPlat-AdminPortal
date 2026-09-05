@@ -22,6 +22,9 @@ const finalAttemptSchema = new mongoose.Schema(
     startedAt: { type: Date },
     testTitle: { type: String, trim: true },
     examCategory: { type: String, trim: true },
+    // Browser the candidate used (ExamPlat Browser / Chrome / Safari / …).
+    // Written by the student portal (friendly name or raw User-Agent).
+    browser: { type: String, trim: true },
     submittedAt: { type: Date },
   },
   { timestamps: true, strict: false, collection: "finalattempts" }

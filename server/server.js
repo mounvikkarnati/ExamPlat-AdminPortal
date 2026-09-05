@@ -43,7 +43,94 @@ const dropStaleQuestionIndex = async () => {
   }
 };
 
-mongoose.connection.once("connected", dropStaleQuestionIndex);
+// ---------------------------------------------------------------------------
+// Startup cleanup: drop stale unique indexes from the shared allow-list
+// collections (finalallowedcandidates, allowedcandidates).
+//
+// The student portal shares this same MongoDB database and uses older
+// field names (candidateId, examId) for its candidate model. Those fields
+// do not exist on the admin portal's FinalAllowedCandidate / AllowedCandidate
+// schemas (which use testId + hallTicketNo), so every document is indexed
+// as { candidateId: null, examId: null } — and the stale unique compound
+// index rejects the 2nd+ candidate with E11000.
+//
+// Same pattern as dropStaleQuestionIndex above.
+// ---------------------------------------------------------------------------
+const dropStaleAllowedCandidateIndexes = async () => {
+  const collections = ["finalallowedcandidates", "allowedcandidates"];
+  for (const collectionName of collections) {
+    try {
+      const db = mongoose.connection.db;
+      const col = db.collection(collectionName);
+      const indexes = await col.indexes();
+      const stale = indexes.filter(
+        (idx) => idx.key.candidateId !== undefined || idx.key.examId !== undefined
+      );
+      for (const idx of stale) {
+        console.log(`[startup] Dropping stale index "${idx.name}" from ${collectionName} collection`);
+        await col.dropIndex(idx.name);
+        console.log(`[startup] Dropped "${idx.name}" from ${collectionName}`);
+      }
+
+      // With autoIndex: false on the models, Mongoose won't create the correct
+      // indexes — ensure they exist here by creating them idempotently.
+      // The unique index may fail if legacy documents have null testId/hallTicketNo;
+      // that is non-fatal because the application enforces uniqueness in code.
+      try {
+        await col.createIndex({ testId: 1, hallTicketNo: 1 }, { unique: true });
+        console.log(`[startup] Ensured unique index on { testId, hallTicketNo } in ${collectionName}`);
+      } catch (idxErr) {
+        console.error(`[startup] Could not create unique index on ${collectionName}:`, idxErr.message);
+      }
+
+      try {
+        await col.createIndex({ testId: 1, hallTicketNo: "text" });
+        console.log(`[startup] Ensured text index on { testId, hallTicketNo } in ${collectionName}`);
+      } catch (idxErr) {
+        console.error(`[startup] Could not create text index on ${collectionName}:`, idxErr.message);
+      }
+    } catch (err) {
+      // Non-fatal: if the collection doesn't exist, just log it.
+      console.error(`[startup] Could not clean stale index from ${collectionName}:`, err.message);
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Startup cleanup: drop stale unique indexes from exam collections
+// (finalexams, tests).
+//
+// The FinalExam and Test models previously had an examCode field with a
+// unique index. This field has been removed and replaced with testId/finalExamId,
+// but the stale examCode_1 index remains in MongoDB. Every document without
+// an examCode field effectively has examCode: null, so the stale unique index
+// rejects the 2nd+ exam with E11000.
+// ---------------------------------------------------------------------------
+const dropStaleExamIndexes = async () => {
+  const collections = ["finalexams", "tests"];
+  for (const collectionName of collections) {
+    try {
+      const db = mongoose.connection.db;
+      const col = db.collection(collectionName);
+      const indexes = await col.indexes();
+      const stale = indexes.filter((idx) => idx.key.examCode !== undefined);
+      for (const idx of stale) {
+        console.log(`[startup] Dropping stale index "${idx.name}" from ${collectionName} collection`);
+        await col.dropIndex(idx.name);
+        console.log(`[startup] Dropped "${idx.name}" from ${collectionName}`);
+      }
+    } catch (err) {
+      // Non-fatal: if the collection doesn't exist, just log it.
+      console.error(`[startup] Could not clean stale index from ${collectionName}:`, err.message);
+    }
+  }
+};
+
+mongoose.connection.once("connected", async () => {
+  await dropStaleQuestionIndex();
+  await dropStaleAllowedCandidateIndexes();
+  await dropStaleExamIndexes();
+});
 
 const app = express();
 

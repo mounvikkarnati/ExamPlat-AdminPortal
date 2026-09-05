@@ -37,7 +37,15 @@ const finalAllowedCandidateSchema = new mongoose.Schema(
     resultEmail: { type: String, trim: true, lowercase: true, default: "" },
     resultDeliveryError: { type: String, default: "" },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    // CRITICAL: The student portal shares this same MongoDB database and may have
+    // created a stale unique index { candidateId: 1, examId: 1 } on this collection
+    // using older field names. autoIndex: false prevents Mongoose from syncing/
+    // creating indexes here, avoiding conflicts with the student portal's indexes.
+    // The correct indexes are ensured by the startup cleanup in server.js.
+    autoIndex: false,
+  }
 );
 
 finalAllowedCandidateSchema.index({ testId: 1, hallTicketNo: 1 }, { unique: true });

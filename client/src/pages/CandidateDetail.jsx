@@ -54,7 +54,7 @@ export default function CandidateDetail() {
   };
 
   if (!data) return <p className="text-sm text-slate-500">Loading…</p>;
-  const { candidate, effective, canManage, attempt } = data;
+  const { candidate, effective, canManage, attempt, browser } = data;
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -63,7 +63,25 @@ export default function CandidateDetail() {
           ← Back to examination
         </Link>
         <h1 className="mt-2 text-xl font-semibold text-slate-900">{candidate.hallTicketNo}</h1>
-        <p className="text-sm capitalize text-slate-500">Status: {candidate.status}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <p className="text-sm capitalize text-slate-500">Status: {candidate.status}</p>
+          {browser && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                className="h-3.5 w-3.5 text-brand-600"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18Z" />
+              </svg>
+              Browser: {browser}
+            </span>
+          )}
+        </div>
         {!canManage && (
           <p className="mt-2 text-sm font-medium text-amber-700">
             View only — you don't have modify access to this examination.
@@ -176,6 +194,12 @@ export default function CandidateDetail() {
                 <p className="text-slate-500">Submitted</p>
                 <p className="font-medium text-slate-600">
                   {attempt.submittedAt ? new Date(attempt.submittedAt).toLocaleString() : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-500">Browser</p>
+                <p className="font-medium text-slate-800">
+                  {browser || attempt.browser || "—"}
                 </p>
               </div>
             </div>

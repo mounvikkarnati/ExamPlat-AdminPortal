@@ -390,13 +390,14 @@ export default function ModifyTest() {
               <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-left">Score</th>
               <th className="px-3 py-2 text-left">Attempt</th>
+              <th className="px-3 py-2 text-left">Browser</th>
               <th className="px-3 py-2 text-left"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {candidates.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={6} className="px-3 py-6 text-center text-slate-400">
                   No candidates found.
                 </td>
               </tr>
@@ -413,6 +414,7 @@ export default function ModifyTest() {
                   <td className="px-3 py-2 text-slate-600">
                     {c.attemptNumber ? `#${c.attemptNumber}` : "—"}
                   </td>
+                  <td className="px-3 py-2 capitalize text-slate-600">{c.browser ?? "—"}</td>
                   <td className="px-3 py-2 text-right">
                     <Link
                       to={`/tests/${id}/candidates/${c._id}`}
