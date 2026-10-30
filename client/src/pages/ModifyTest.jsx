@@ -37,6 +37,11 @@ export default function ModifyTest() {
   const [publishMessage, setPublishMessage] = useState("");
   const [deleting, setDeleting] = useState(false);
 
+  const [resultsPublished, setResultsPublished] = useState(false);
+  const [togglingResults, setTogglingResults] = useState(false);
+  const [sendingMail, setSendingMail] = useState(false);
+  const [mailMessage, setMailMessage] = useState("");
+
   const [adminsList, setAdminsList] = useState([]);
   const [allowAllAdmins, setAllowAllAdmins] = useState(false);
   const [selectedAdmins, setSelectedAdmins] = useState(new Set());
@@ -61,6 +66,7 @@ export default function ModifyTest() {
       setCanDelete(data.canDelete);
       setCanEditManagers(data.canEditManagers);
       setQuestionCount(data.questionCount);
+      setResultsPublished(!!data.test.resultsPublished);
       setStartAt(toLocalInput(data.test.defaultStartAt));
       setEndAt(toLocalInput(data.test.defaultEndAt));
       setDefaultAttempts(data.test.defaultAttempts);
@@ -158,20 +164,33 @@ export default function ModifyTest() {
     }
   };
 
-  const publishResults = async () => {
-    setPublishing(true);
-    setPublishMessage("");
+  const toggleResultsPublished = async (next) => {
+    setTogglingResults(true);
+    setMailMessage("");
     try {
-      const { data } = await api.post(`/tests/${id}/publish-results`);
-      const { delivered, skipped, failed, missingEmail } = data.summary;
-      setPublishMessage(
-        `Published: ${delivered} sent${skipped ? `, ${skipped} already sent` : ""}${missingEmail ? `, ${missingEmail} without email` : ""}${failed ? `, ${failed} failed` : ""}.`
-      );
-      loadTest();
+      const { data } = await api.patch(`/tests/${id}/results-published`, { published: next });
+      setTest(data.test);
+      setResultsPublished(!!data.resultsPublished);
     } catch (err) {
-      setPublishMessage(err.response?.data?.message || "Could not publish results");
+      setMailMessage(err.response?.data?.message || "Could not update result publication status");
     } finally {
-      setPublishing(false);
+      setTogglingResults(false);
+    }
+  };
+
+  const sendResultNotification = async () => {
+    setSendingMail(true);
+    setMailMessage("");
+    try {
+      const { data } = await api.post(`/tests/${id}/send-result-notification`);
+      const { sent, failed, missingEmail } = data.summary;
+      setMailMessage(
+        `Sent: ${sent} email(s)${missingEmail ? `, ${missingEmail} without email` : ""}${failed ? `, ${failed} failed` : ""}.`
+      );
+    } catch (err) {
+      setMailMessage(err.response?.data?.message || "Could not send result notifications");
+    } finally {
+      setSendingMail(false);
     }
   };
 
@@ -223,10 +242,31 @@ export default function ModifyTest() {
           </div>
           <div className="flex items-center gap-3">
             <StatusBadge status={test.status} />
-            {canPublish && test.status === "Completed" && (
-              <button onClick={publishResults} disabled={publishing} className="btn-primary text-sm">
-                {publishing ? "Publishing…" : "Publish results"}
-              </button>
+            {isSuperAdmin && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-700">Results published</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={resultsPublished}
+                  disabled={togglingResults}
+                  onClick={() => toggleResultsPublished(!resultsPublished)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${resultsPublished ? "bg-emerald-500" : "bg-slate-300"} disabled:opacity-60`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${resultsPublished ? "translate-x-6" : "translate-x-1"}`}
+                  />
+                </button>
+                {resultsPublished && (
+                  <button
+                    onClick={sendResultNotification}
+                    disabled={sendingMail}
+                    className="btn-primary text-sm"
+                  >
+                    {sendingMail ? "Sending…" : "Send mail"}
+                  </button>
+                )}
+              </div>
             )}
             {canDelete && (
               <button
@@ -239,14 +279,11 @@ export default function ModifyTest() {
             )}
           </div>
         </div>
-        {canPublish && test.status === "Completed" && (
-          <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50 px-4 py-3 text-sm text-violet-900">
-            <span className="font-semibold">Result delivery.</span> Send every student their result and response PDF.{" "}
-            {publishMessage && (
-              <span className={publishMessage.includes("Could") ? "text-red-700" : "text-emerald-700"}>
-                {publishMessage}
-              </span>
-            )}
+        {mailMessage && (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900">
+            <span className={mailMessage.includes("Could") ? "text-red-700" : "text-emerald-700"}>
+              {mailMessage}
+            </span>
           </div>
         )}
       </div>

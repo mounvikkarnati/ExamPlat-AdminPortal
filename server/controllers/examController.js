@@ -9,7 +9,7 @@ const Student = require("../models/Student");
 const Admin = require("../models/Admin");
 const { parseQuestionFile, parseCandidateFile } = require("../utils/parseUploads");
 const { generateFinalExamId, logAction } = require("../utils/helpers");
-const { makeResponsePdf, sendResultEmail } = require("../utils/resultDelivery");
+const { sendResultReleaseEmail } = require("../utils/resultDelivery");
 const { attemptBrowser } = require("../utils/browserDetection");
 
 // The student portal shares this MongoDB and may create a stale unique index
@@ -689,100 +689,92 @@ const getCandidateDetail = asyncHandler(async (req, res) => {
   });
 });
 
-// @route POST /api/tests/:id/publish-results — Super Admin only
-const publishResults = asyncHandler(async (req, res) => {
+// @route PATCH /api/tests/:id/results-published — Super Admin only
+const toggleResultsPublished = asyncHandler(async (req, res) => {
   const exam = await findExamOrThrow(req.params.id, res);
   if (!isSuperAdmin(req.admin)) {
     res.status(403);
     throw new Error("Forbidden: Super Admin access required");
   }
 
-  if (currentStatus(exam) !== "Completed") {
+  const published = !!req.body.published;
+  exam.resultsPublished = published;
+  exam.resultsPublishedAt = new Date();
+  exam.resultsPublishedBy = req.admin._id;
+  await exam.save();
+
+  await logAction({
+    adminId: req.admin._id,
+    action: published ? "ENABLE_FINAL_EXAM_RESULTS" : "DISABLE_FINAL_EXAM_RESULTS",
+    targetCollection: "FinalExam",
+    targetId: exam._id,
+    details: { resultsPublished: published },
+    ipAddress: req.ip,
+  });
+
+  res.json({
+    message: published ? "Results marked as published" : "Results marked as unpublished",
+    test: withCurrentStatus(exam),
+    resultsPublished: exam.resultsPublished,
+    resultsPublishedAt: exam.resultsPublishedAt,
+  });
+});
+
+// @route POST /api/tests/:id/send-result-notification — Super Admin only
+const sendResultNotification = asyncHandler(async (req, res) => {
+  const exam = await findExamOrThrow(req.params.id, res);
+  if (!isSuperAdmin(req.admin)) {
+    res.status(403);
+    throw new Error("Forbidden: Super Admin access required");
+  }
+
+  if (!exam.resultsPublished) {
     res.status(400);
-    throw new Error("Results can only be published after the examination is completed");
+    throw new Error("Results must be published before sending notifications");
   }
 
-  const [candidates, questions] = await Promise.all([
-    FinalAllowedCandidate.find({ testId: exam._id }),
-    FinalQuestion.find({ testId: exam._id }),
-  ]);
+  const candidates = await FinalAllowedCandidate.find({ testId: exam._id });
 
-  // Fetch all attempts for this exam
-  // NOTE: testMongoId is stored as a STRING in the finalattempts collection
-  const attempts = await FinalAttempt.find({ testMongoId: String(exam._id) });
-
-  // Build a map of hallTicketNo -> latest attempt
-  const attemptByHallTicket = new Map();
-  for (const a of attempts) {
-    const reg = await ExamRegistration.findById(a.registrationId);
-    if (reg && reg.registrationNumber) {
-      const hallTicket = String(reg.registrationNumber).trim();
-      const existing = attemptByHallTicket.get(hallTicket);
-      if (!existing || (a.attemptNumber || 1) > (existing.attemptNumber || 0)) {
-        attemptByHallTicket.set(hallTicket, a);
-      }
-    }
-  }
-
-  // Fetch student info for names and emails
-  const regs = await ExamRegistration.find({ registrationNumber: { $in: candidates.map((c) => c.hallTicketNo) } });
+  const regs = await ExamRegistration.find({
+    registrationNumber: { $in: candidates.map((c) => c.hallTicketNo) },
+  });
   const studentIds = regs.map((r) => r.studentId).filter(Boolean);
   const students = await Student.find({ _id: { $in: studentIds } });
   const studentById = new Map(students.map((s) => [String(s._id), s]));
-  const regByHallTicket = new Map(regs.map((r) => [String(r.registrationNumber).trim(), r]));
+  const regByHallTicket = new Map(
+    regs.map((r) => [String(r.registrationNumber).trim(), r])
+  );
 
-  const summary = { delivered: 0, skipped: 0, failed: 0, missingEmail: 0 };
+  const summary = { sent: 0, failed: 0, missingEmail: 0, total: candidates.length };
 
   for (const candidate of candidates) {
-    if (candidate.resultPublishedAt) {
-      summary.skipped += 1;
-      continue;
-    }
-
     const reg = regByHallTicket.get(candidate.hallTicketNo);
     const student = reg ? studentById.get(String(reg.studentId)) : null;
     const recipient = candidate.resultEmail || student?.email || student?.emailId;
     if (!recipient) {
-      candidate.resultDeliveryError = "No registered email address found";
-      await candidate.save();
       summary.missingEmail += 1;
       continue;
     }
 
-    const attempt = attemptByHallTicket.get(candidate.hallTicketNo) || null;
     const studentName = student?.name || student?.fullName || candidate.hallTicketNo;
-
     try {
-      const pdf = await makeResponsePdf({ test: exam, candidate, questions, attempt });
-      await sendResultEmail({ recipient, test: exam, candidate, pdf, attempt, studentName });
-      candidate.resultPublishedAt = new Date();
-      candidate.resultEmail = recipient;
-      candidate.resultDeliveryError = "";
-      await candidate.save();
-      summary.delivered += 1;
+      await sendResultReleaseEmail({ recipient, test: exam, studentName });
+      summary.sent += 1;
     } catch (error) {
-      candidate.resultDeliveryError = error.message;
-      await candidate.save();
       summary.failed += 1;
     }
   }
 
-  if (summary.delivered > 0) {
-    exam.resultsPublishedAt = new Date();
-    exam.resultsPublishedBy = req.admin._id;
-    await exam.save();
-  }
-
   await logAction({
     adminId: req.admin._id,
-    action: "PUBLISH_FINAL_EXAM_RESULTS",
+    action: "SEND_FINAL_EXAM_RESULT_NOTIFICATION",
     targetCollection: "FinalExam",
     targetId: exam._id,
     details: summary,
     ipAddress: req.ip,
   });
 
-  res.json({ message: "Result publication finished", summary });
+  res.json({ message: "Result notification finished", summary });
 });
 
 module.exports = {
@@ -797,5 +789,6 @@ module.exports = {
   addCandidate,
   updateCandidate,
   getCandidateDetail,
-  publishResults,
+  toggleResultsPublished,
+  sendResultNotification,
 };

@@ -38,6 +38,7 @@ const finalExamSchema = new mongoose.Schema(
     },
 
     candidateCount: { type: Number, default: 0 },
+    resultsPublished: { type: Boolean, default: false },
     resultsPublishedAt: { type: Date, default: null },
     resultsPublishedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Admin", default: null },
 

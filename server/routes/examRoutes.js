@@ -13,7 +13,8 @@ const {
   addCandidate,
   updateCandidate,
   getCandidateDetail,
-  publishResults,
+  toggleResultsPublished,
+  sendResultNotification,
 } = require("../controllers/examController");
 const { protect, superAdminOnly, requirePasswordChange } = require("../middleware/auth");
 
@@ -42,7 +43,10 @@ router.put("/:id/managers", superAdminOnly, modifyExamManagers);
 router.put("/:id", modifyExamDefaults);
 // Only Super Admins can delete an examination.
 router.delete("/:id", superAdminOnly, deleteExam);
-router.post("/:id/publish-results", superAdminOnly, publishResults);
+// Only Super Admins can toggle result publication for an examination.
+router.patch("/:id/results-published", superAdminOnly, toggleResultsPublished);
+// Only Super Admins can send result release notifications.
+router.post("/:id/send-result-notification", superAdminOnly, sendResultNotification);
 
 router.get("/:id/candidates", listCandidates);
 router.post("/:id/candidates", addCandidate);

@@ -94,4 +94,49 @@ const sendResultEmail = async ({ recipient, test, candidate, pdf, attempt, stude
   });
 };
 
-module.exports = { makeResponsePdf, sendResultEmail };
+const sendResultReleaseEmail = async ({ recipient, test, studentName }) => {
+  const SMTP_HOST = process.env.BREVO_SMTP_HOST || process.env.SMTP_HOST;
+  const SMTP_PORT = process.env.BREVO_SMTP_PORT || process.env.SMTP_PORT;
+  const SMTP_USER = process.env.BREVO_SMTP_USER || process.env.SMTP_USER;
+  const SMTP_PASS = process.env.BREVO_SMTP_PASS || process.env.SMTP_PASS;
+  const EMAIL_FROM = process.env.BREVO_FROM_EMAIL || process.env.EMAIL_FROM;
+
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !EMAIL_FROM) {
+    throw new Error("Email delivery is not configured. Set BREVO_SMTP_HOST, BREVO_SMTP_USER, BREVO_SMTP_PASS, and BREVO_FROM_EMAIL.");
+  }
+  const SENDER_NAME = "ExamPlat Result";
+  const fromAddress = EMAIL_FROM.includes("<") ? EMAIL_FROM : `${SENDER_NAME} <${EMAIL_FROM}>`;
+  const transporter = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: Number(SMTP_PORT || 587),
+    secure: Number(SMTP_PORT) === 465,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+  });
+
+  const name = studentName || "Candidate";
+  const examDate = test.defaultStartAt ? new Date(test.defaultStartAt).toLocaleString() : "—";
+  const examId = test.finalExamId || test.testId || "—";
+  const emailBody = [
+    `Dear ${name},`,
+    ``,
+    `The results for ${test.title} have been released.`,
+    ``,
+    `Exam Name: ${test.title}`,
+    `Test ID: ${examId}`,
+    `Exam Date: ${examDate}`,
+    ``,
+    `Please check your result at https://examplatstudent.vercel.app/final-result`,
+    ``,
+    `Regards,`,
+    `ExamPlat Team`,
+  ].join("\\n");
+
+  await transporter.sendMail({
+    from: fromAddress,
+    to: recipient,
+    subject: `${test.title} - Results released`,
+    text: emailBody,
+  });
+};
+
+module.exports = { makeResponsePdf, sendResultEmail, sendResultReleaseEmail };
