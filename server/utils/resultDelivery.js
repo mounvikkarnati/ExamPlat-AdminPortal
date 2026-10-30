@@ -2,6 +2,13 @@ const PDFDocument = require("pdfkit");
 const nodemailer = require("nodemailer");
 const { attemptBrowser } = require("./browserDetection");
 
+const escapeHtml = (value) => String(value ?? "")
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;")
+  .replace(/'/g, "&#39;");
+
 const makeResponsePdf = ({ test, candidate, questions, attempt }) => new Promise((resolve, reject) => {
   const doc = new PDFDocument({ margin: 48, size: "A4" });
   const chunks = [];
@@ -47,7 +54,7 @@ const sendResultEmail = async ({ recipient, test, candidate, pdf, attempt, stude
     throw new Error("Email delivery is not configured. Set BREVO_SMTP_HOST, BREVO_SMTP_USER, BREVO_SMTP_PASS, and BREVO_FROM_EMAIL.");
   }
   // Format the sender with a display name: "ExamPlat <noreply.linksphere@gmail.com>"
-  const SENDER_NAME = "ExamPlat Result";
+  const SENDER_NAME = "ExamPlat Admin";
   const fromAddress = EMAIL_FROM.includes("<") ? EMAIL_FROM : `${SENDER_NAME} <${EMAIL_FROM}>`;
   const transporter = nodemailer.createTransport({
     host: SMTP_HOST,
@@ -104,7 +111,7 @@ const sendResultReleaseEmail = async ({ recipient, test, studentName }) => {
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !EMAIL_FROM) {
     throw new Error("Email delivery is not configured. Set BREVO_SMTP_HOST, BREVO_SMTP_USER, BREVO_SMTP_PASS, and BREVO_FROM_EMAIL.");
   }
-  const SENDER_NAME = "ExamPlat Result";
+  const SENDER_NAME = "ExamPlat Admin";
   const fromAddress = EMAIL_FROM.includes("<") ? EMAIL_FROM : `${SENDER_NAME} <${EMAIL_FROM}>`;
   const transporter = nodemailer.createTransport({
     host: SMTP_HOST,
@@ -116,26 +123,54 @@ const sendResultReleaseEmail = async ({ recipient, test, studentName }) => {
   const name = studentName || "Candidate";
   const examDate = test.defaultStartAt ? new Date(test.defaultStartAt).toLocaleString() : "—";
   const examId = test.finalExamId || test.testId || "—";
+  const resultUrl = "https://examplatstudent.vercel.app/final-result";
   const emailBody = [
     `Dear ${name},`,
     ``,
-    `The results for ${test.title} have been released.`,
+    `The results for ${test.title} are now available.`,
     ``,
     `Exam Name: ${test.title}`,
     `Test ID: ${examId}`,
     `Exam Date: ${examDate}`,
     ``,
-    `Please check your result at https://examplatstudent.vercel.app/final-result`,
+    `View your result: ${resultUrl}`,
     ``,
-    `Regards,`,
+    `Best regards,`,
     `ExamPlat Team`,
-  ].join("\\n");
+  ].join("\n");
+
+  const safeName = escapeHtml(name);
+  const safeTitle = escapeHtml(test.title);
+  const safeExamId = escapeHtml(examId);
+  const safeExamDate = escapeHtml(examDate);
+  const html = `
+    <div style="margin:0;padding:32px 16px;background:#f3f6fb;font-family:Arial,Helvetica,sans-serif;color:#172033;">
+      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e5eaf2;border-radius:12px;overflow:hidden;">
+        <tr><td style="padding:24px 32px;background:#173b72;color:#ffffff;">
+          <div style="font-size:13px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#c8dcff;">ExamPlat</div>
+          <div style="margin-top:8px;font-size:24px;line-height:1.3;font-weight:bold;">Your results are ready</div>
+        </td></tr>
+        <tr><td style="padding:30px 32px 12px;font-size:16px;line-height:1.6;">
+          <p style="margin:0 0 12px;">Dear ${safeName},</p>
+          <p style="margin:0 0 22px;color:#475569;">The results for <strong style="color:#172033;">${safeTitle}</strong> have been released. You can view your result securely using the button below.</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 24px;border-collapse:collapse;background:#f8fafc;border:1px solid #e5eaf2;border-radius:8px;">
+            <tr><td style="padding:12px 16px;border-bottom:1px solid #e5eaf2;color:#64748b;font-size:13px;width:125px;">Exam name</td><td style="padding:12px 16px;border-bottom:1px solid #e5eaf2;font-size:14px;font-weight:bold;">${safeTitle}</td></tr>
+            <tr><td style="padding:12px 16px;border-bottom:1px solid #e5eaf2;color:#64748b;font-size:13px;">Test ID</td><td style="padding:12px 16px;border-bottom:1px solid #e5eaf2;font-size:14px;">${safeExamId}</td></tr>
+            <tr><td style="padding:12px 16px;color:#64748b;font-size:13px;">Exam date</td><td style="padding:12px 16px;font-size:14px;">${safeExamDate}</td></tr>
+          </table>
+          <p style="margin:0 0 24px;text-align:center;"><a href="${resultUrl}" style="display:inline-block;padding:13px 24px;background:#2563eb;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;border-radius:6px;">View your result</a></p>
+          <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">If the button doesn’t work, copy and paste this link into your browser:<br><a href="${resultUrl}" style="color:#2563eb;word-break:break-all;">${resultUrl}</a></p>
+        </td></tr>
+        <tr><td style="padding:20px 32px 24px;border-top:1px solid #edf0f5;color:#64748b;font-size:13px;line-height:1.6;">Best regards,<br><strong style="color:#334155;">ExamPlat Team</strong></td></tr>
+      </table>
+    </div>`;
 
   await transporter.sendMail({
     from: fromAddress,
     to: recipient,
     subject: `${test.title} - Results released`,
     text: emailBody,
+    html,
   });
 };
 
