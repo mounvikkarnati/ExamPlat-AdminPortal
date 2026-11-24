@@ -134,9 +134,16 @@ mongoose.connection.once("connected", async () => {
 
 const app = express();
 
-const corsOptions = {
+const cors = require("cors");
+
+const allowedOrigins = [
+  "https://examplat-admin.nritupskills.com",
+  "https://examplat-exam.nritupskills.com"
+];
+
+app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || origin === "https://examplatadminportal.vercel.app") {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error("Not allowed by CORS: " + origin));
@@ -144,10 +151,8 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
-
-app.use(cors(corsOptions));
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
 app.use(express.json());
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
