@@ -134,8 +134,6 @@ mongoose.connection.once("connected", async () => {
 
 const app = express();
 
-const cors = require("cors");
-
 const allowedOrigins = [
   "https://examplat-admin.nritupskills.com",
   "https://examplat-exam.nritupskills.com"
