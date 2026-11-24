@@ -7,7 +7,7 @@ export default defineConfig({
     port: 5174,
     proxy: {
       "/api": {
-        target: "http://localhost:5020",
+        target: "https://examplat-adminportal.onrender.com",
         changeOrigin: true,
       },
     },

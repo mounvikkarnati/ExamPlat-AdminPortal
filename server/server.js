@@ -134,27 +134,20 @@ mongoose.connection.once("connected", async () => {
 
 const app = express();
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      // Vite selects the next available development port, so retain its two
-      // standard local ports even when CLIENT_ORIGIN specifies a deployed URL.
-      const allowed = [
-        ...new Set([
-          ...(process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(",").map((o) => o.trim()) : []),
-          "http://localhost:5173",
-          "http://localhost:5174",
-        ]),
-      ];
-      if (allowed.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error("Origin is not allowed by CORS"));
-    },
-    credentials: true,
-  })
-);
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || origin === "https://examplatadminportal.vercel.app") {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS: " + origin));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
